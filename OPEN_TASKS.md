@@ -1,9 +1,11 @@
 # Open Tasks - macOS Speedtest Menu Bar Widget
 
 ## Known Open Items
-- Locate canonical source and confirm whether app/LaunchAgent is still installed.
-- Build a current runbook after source verification.
+- (none blocking) Widget deployed as v3 with bundle id com.timur.speedtest3; visible and crash-recovering as of 2026-07-19.
+- Optional: observe first real sleep/wake cycle; occlusion watchdog should recover within ~30s (see HANDOFF.md).
 
 ## Verification Needed
-- Re-run live checks before claiming any stale/open issue is fixed.
-- Add fresh evidence paths or commands to this file after future work.
+- After any future "widget gone" report: check `pgrep -x SpeedtestMenuBar`, then
+  `~/Library/Caches/speedtest-menubar/native-app.err.log`, then rebuild via
+  `SpeedtestMenuBarApp/Scripts/install.sh`. If macOS blacklisted the bundle id again,
+  bump BUNDLE_ID in `SpeedtestMenuBarApp/version.env` and reinstall.

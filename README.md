@@ -1,18 +1,17 @@
 # SpeedBar — live network speed in the macOS menu bar
 
-A always-on network speed readout for the macOS menu bar. Live download and upload
+An always-on network speed readout for the macOS menu bar. Live download and upload
 throughput in Mbps, updated 5× per second, with sparklines and session peaks.
 
-```
-▁▂▃▅ 298  ▁▁▂▂ 46
- download    upload
-```
+<img src="media/demo.gif" alt="The widget in the macOS menu bar: a green download sparkline and Mbps figure beside a red upload sparkline and figure, both updating live" width="234">
+
+Green is download, red is upload. Both numbers are live — that is the whole point.
 
 Unlike a "run a speedtest now" utility, this measures **continuously** — the number
 in your menu bar is what your link is doing right now, not what it did the last time
 you asked.
 
-<img width="194" height="322" alt="image" src="https://github.com/user-attachments/assets/7b32e076-258a-4702-a2d4-091e3e0d0116" />
+<img width="194" height="322" alt="The dropdown menu, showing live download and upload figures, session maxima, probe status and the Kickstart Probe, Reset Peaks, Reinstall Probe and Quit actions" src="https://github.com/user-attachments/assets/7b32e076-258a-4702-a2d4-091e3e0d0116" />
 
 ---
 

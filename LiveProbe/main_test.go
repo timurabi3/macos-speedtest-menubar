@@ -229,13 +229,18 @@ func TestResumeControlCommandRoundTrip(t *testing.T) {
 	}
 }
 
-func TestProbeStatusReflectsPause(t *testing.T) {
-	status, phase, pid := probeStatus(false, 4242)
-	if status != "running" || phase != "parallel" || pid != 4242 {
-		t.Fatalf("running triple = %q/%q/%v, want running/parallel/4242", status, phase, pid)
+func TestProbeStatusReflectsPauseAndTesting(t *testing.T) {
+	status, phase, pid := probeStatus(false, false, 4242)
+	if status != "running" || phase != "idle" || pid != 4242 {
+		t.Fatalf("idle triple = %q/%q/%v, want running/idle/4242", status, phase, pid)
 	}
 
-	status, phase, pid = probeStatus(true, 4242)
+	status, phase, pid = probeStatus(false, true, 4242)
+	if status != "running" || phase != "testing" || pid != 4242 {
+		t.Fatalf("testing triple = %q/%q/%v, want running/testing/4242", status, phase, pid)
+	}
+
+	status, phase, pid = probeStatus(true, false, 4242)
 	if status != "paused" || phase != "paused" {
 		t.Fatalf("paused triple = %q/%q, want paused/paused", status, phase)
 	}
@@ -243,6 +248,79 @@ func TestProbeStatusReflectsPause(t *testing.T) {
 	// measuring probe, and livePIDExists() would keep confirming it.
 	if pid != nil {
 		t.Fatalf("paused pid = %v, want nil", pid)
+	}
+
+	// Pause wins over a stale testing flag.
+	if status, _, _ := probeStatus(true, true, 1); status != "paused" {
+		t.Fatalf("paused+testing status = %q, want paused", status)
+	}
+}
+
+func TestDutyCycleKeepsBandwidthBounded(t *testing.T) {
+	// The whole point of the hybrid design. An always-on probe measured ~3 TB/day;
+	// guard the ratio so a future edit can't quietly restore that.
+	duty := activeTestDuration.Seconds() / activeTestInterval.Seconds()
+	if duty > 0.01 {
+		t.Fatalf("active duty cycle = %.4f (%.0fs every %v), want <= 1%%",
+			duty, activeTestDuration.Seconds(), activeTestInterval)
+	}
+	if activeTestWarmup >= activeTestDuration {
+		t.Fatalf("warmup %v must be shorter than the test itself %v",
+			activeTestWarmup, activeTestDuration)
+	}
+	if passiveInterval > 2*time.Second {
+		t.Fatalf("passiveInterval=%v too slow for a live readout", passiveInterval)
+	}
+}
+
+func TestTestIsAValidControlCommand(t *testing.T) {
+	if !isValidControlCommand(controlTest) {
+		t.Fatal("test must be a valid control command")
+	}
+}
+
+func TestIsPhysicalInterfaceExcludesVirtualAdapters(t *testing.T) {
+	for _, name := range []string{"en0", "en1", "eth0"} {
+		if !isPhysicalInterface(name) {
+			t.Fatalf("isPhysicalInterface(%q) = false, want true", name)
+		}
+	}
+	// Counting a tunnel alongside the interface it rides on double counts bytes;
+	// awdl/llw are AirDrop and carry no user traffic.
+	for _, name := range []string{"lo0", "utun3", "awdl0", "llw0", "bridge0", "gif0", "stf0", "p2p0"} {
+		if isPhysicalInterface(name) {
+			t.Fatalf("isPhysicalInterface(%q) = true, want false", name)
+		}
+	}
+}
+
+func TestDeltaBytesSurvivesCounterReset(t *testing.T) {
+	if got := deltaBytes(1500, 1000); got != 500 {
+		t.Fatalf("deltaBytes(1500,1000) = %d, want 500", got)
+	}
+	// Interface down, or sleep/wake: the counter restarts. Report no traffic
+	// rather than a nonsense spike from unsigned wraparound.
+	if got := deltaBytes(10, 999999); got != 0 {
+		t.Fatalf("deltaBytes after reset = %d, want 0", got)
+	}
+}
+
+func TestInterfaceTotalsReadsRealCounters(t *testing.T) {
+	in, out, err := interfaceTotals()
+	if err != nil {
+		t.Fatalf("interfaceTotals error: %v", err)
+	}
+	// Any machine that has ever been on a network has moved bytes.
+	if in == 0 && out == 0 {
+		t.Fatal("interfaceTotals returned 0/0 — parsing is probably broken")
+	}
+	// Monotonic across calls (barring a reset mid-test, which would be a fluke).
+	in2, out2, err := interfaceTotals()
+	if err != nil {
+		t.Fatalf("second interfaceTotals error: %v", err)
+	}
+	if in2 < in || out2 < out {
+		t.Fatalf("counters went backwards: %d->%d / %d->%d", in, in2, out, out2)
 	}
 }
 
@@ -264,5 +342,32 @@ func TestStaleControlCommandIsNotPending(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("stale control file was not cleared: %v", err)
+	}
+}
+
+func TestDurationEnvOverride(t *testing.T) {
+	t.Setenv("SPEEDTEST_TEST_INTERVAL", "")
+	if got := testInterval(); got != activeTestInterval {
+		t.Fatalf("testInterval() with empty env = %v, want default %v", got, activeTestInterval)
+	}
+
+	t.Setenv("SPEEDTEST_TEST_INTERVAL", "90m")
+	if got := testInterval(); got != 90*time.Minute {
+		t.Fatalf("testInterval() = %v, want 90m", got)
+	}
+
+	// Garbage must fall back to the default, not to zero — a zero interval would
+	// mean "test continuously", which is the 3 TB/day behaviour this replaced.
+	t.Setenv("SPEEDTEST_TEST_INTERVAL", "not-a-duration")
+	if got := testInterval(); got != activeTestInterval {
+		t.Fatalf("testInterval() with junk = %v, want default %v", got, activeTestInterval)
+	}
+	t.Setenv("SPEEDTEST_TEST_INTERVAL", "0s")
+	if got := testInterval(); got != activeTestInterval {
+		t.Fatalf("testInterval() with 0s = %v, want default %v", got, activeTestInterval)
+	}
+	t.Setenv("SPEEDTEST_TEST_INTERVAL", "-5m")
+	if got := testInterval(); got != activeTestInterval {
+		t.Fatalf("testInterval() negative = %v, want default %v", got, activeTestInterval)
 	}
 }

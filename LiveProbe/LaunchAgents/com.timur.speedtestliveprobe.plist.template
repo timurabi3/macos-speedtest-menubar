@@ -15,6 +15,14 @@
     <string>https://cachefly.cachefly.net/100mb.test</string>
     <key>SPEEDTEST_LIVE_UPLOAD_URL</key>
     <string>https://speed.cloudflare.com/__up</string>
+    <!-- The bandwidth dial. Capacity tests saturate the link for TEST_DURATION
+         every TEST_INTERVAL; passive utilisation sampling in between is free.
+         At these defaults one test moves ~300 MB on a 500 Mbit line, so roughly
+         15 GB/day. Raise the interval or shorten the duration to spend less. -->
+    <key>SPEEDTEST_TEST_INTERVAL</key>
+    <string>30m</string>
+    <key>SPEEDTEST_TEST_DURATION</key>
+    <string>6s</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>

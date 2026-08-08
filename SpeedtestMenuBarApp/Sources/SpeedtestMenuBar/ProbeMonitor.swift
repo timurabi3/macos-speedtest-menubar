@@ -39,9 +39,17 @@ final class ProbeMonitor {
         probeBinURL = home.appendingPathComponent(".local/bin/speedtest-live-probe")
     }
 
+    private var lastSampleAt: TimeInterval = 0
+
     func tick() {
         state.reload(from: cacheURL)
         rememberGood()
+        // The probe publishes once a second; this polls five times a second.
+        // Appending every poll would pad the sparkline with four duplicates per
+        // real sample, so the graph would scroll five times too fast and show a
+        // fifth of the history it appears to.
+        guard state.updatedAt != lastSampleAt else { return }
+        lastSampleAt = state.updatedAt
         downloadHistory.append(state.downloadMbps ?? lastGoodDownload)
         uploadHistory.append(state.uploadMbps ?? lastGoodUpload)
     }
@@ -53,8 +61,16 @@ final class ProbeMonitor {
         if let v = state.sessionUploadPeak ?? state.uploadPeak, v > 0 { lastGoodPeakUpload = v }
     }
 
+    /// Passive utilisation — what the link is carrying right now. Legitimately
+    /// 0 on an idle machine, so this must NOT fall back to the last good value
+    /// the way a capacity reading would.
     var currentDownload: Double? { state.downloadMbps ?? lastGoodDownload }
     var currentUpload: Double? { state.uploadMbps ?? lastGoodUpload }
+
+    /// Result of the last active capacity test — the "how fast is this line"
+    /// number, refreshed on a timer rather than continuously.
+    var capacityDownload: Double? { state.capacityDownload }
+    var capacityUpload: Double? { state.capacityUpload }
     var peakDownload: Double? { state.sessionDownloadPeak ?? state.downloadPeak ?? lastGoodPeakDownload ?? currentDownload }
     var peakUpload: Double? { state.sessionUploadPeak ?? state.uploadPeak ?? lastGoodPeakUpload ?? currentUpload }
 

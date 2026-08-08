@@ -14,27 +14,45 @@ you asked.
 
 ---
 
-## ⚠️ Read this before installing: bandwidth cost
+## Two numbers, measured two different ways
 
-This tool works by **continuously saturating your connection**. Eight download workers
-and four upload workers run in parallel, permanently, and the displayed Mbps is
-measured from that traffic.
+The menu bar shows **what you're using**. The menu also shows **how fast the line is**.
+Those are different questions and they cost very different amounts to answer.
 
-Measured on a 500 Mbit line:
+| | How | Cost |
+|---|---|---|
+| **In use** — current throughput | Passive: diff the OS interface byte counters | free |
+| **Line speed** — what the link can do | Active: saturate the link for 6s, measure | ~300 MB per test |
 
-| | |
+Passive sampling runs once a second, forever, for nothing. A capacity test runs every
+30 minutes, or when you ask for it.
+
+### Bandwidth
+
+**~15 GB/day at the defaults** (48 tests × ~308 MB on a 500 Mbit line), measured rather
+than estimated. Fine on any normal home connection; still worth thinking about on a
+metered or mobile one, where you should raise the interval.
+
+Earlier versions measured continuously, which meant permanently saturating the link:
+~235 Mbps down and ~44 Mbps up sustained, **~3 TB/day**. That is what the dial below
+exists to prevent.
+
+Tune it in the LaunchAgent — no rebuild needed:
+
+```xml
+<key>SPEEDTEST_TEST_INTERVAL</key><string>30m</string>
+<key>SPEEDTEST_TEST_DURATION</key><string>6s</string>
+```
+
+| Setting | Cost |
 |---|---|
-| Download | ~260 Mbps sustained |
-| Upload | ~46 Mbps sustained |
-| **Per hour** | **~138 GB** |
-| **Per day** | **~3.3 TB** |
+| `30m` / `6s` (default) | ~15 GB/day |
+| `1h` / `6s` | ~7 GB/day |
+| `2h` / `4s` | ~2.5 GB/day |
+| `24h` / `6s` | ~0.3 GB/day (plus manual tests) |
 
-**Do not install this on a metered, capped, tethered, or mobile connection.** It will
-exhaust a monthly data allowance in minutes and may trip your ISP's fair-use policy.
-
-This is a deliberate trade-off — constant live readings over bandwidth savings — not a
-bug. If you want low-traffic sampling instead, that is a real change to the probe's
-duty cycle, not a config flag.
+Bad or zero values fall back to the defaults — a zero interval would mean "test
+continuously", which is exactly the behaviour this replaced.
 
 ---
 
@@ -45,15 +63,19 @@ Two processes, decoupled by a single JSON file. Neither talks to the other direc
 ```mermaid
 flowchart LR
     subgraph probe["LiveProbe — Go daemon"]
-        W["8 download workers<br/>4 upload workers"] --> R["rolling 500ms<br/>rate window"]
+        P["passive: netstat counters<br/>every 1s · free"]
+        W["active: 8 down + 4 up workers<br/>6s burst every 30min"]
+        G(["traffic gate<br/>closed except during a test"])
+        W --- G
     end
-    R -->|"atomic write, 5×/sec"| J["~/Library/Caches/<br/>speedtest-menubar/latest.json"]
-    J -->|"poll, 5×/sec"| APP
+    P --> J["latest.json<br/>in-use + line-speed"]
+    G --> J
+    J -->|poll| APP
     subgraph APP["SpeedtestMenuBar — Swift app"]
         S["NSStatusItem<br/>sparkline + Mbps"]
     end
-    APP -->|"launchctl kickstart<br/>(rate-limited, 1 per 30s)"| probe
-    CTRL["liveprobe-control.json<br/>pause / resume / reset"] --> probe
+    APP -->|"launchctl kickstart<br/>rate-limited, 1 per 30s"| probe
+    CTRL["liveprobe-control.json<br/>pause · resume · reset · test"] --> probe
 ```
 
 | Component | Language | Role |
@@ -130,6 +152,7 @@ rm -rf ~/Library/Caches/speedtest-menubar
 
 Click the menu bar item for live values, session peaks, probe status, and:
 
+- **Run Speed Test Now** — trigger a capacity test instead of waiting for the timer
 - **Kickstart Probe** — force a probe restart immediately
 - **Reset Peaks** — clear the session max
 - **Reinstall Probe** — overwrite the installed probe with the one inside the .app.
@@ -141,31 +164,46 @@ The probe CLI is also usable directly:
 
 ```bash
 speedtest-live-probe status     # print latest.json
-speedtest-live-probe pause      # stop generating traffic, keep the daemon alive
-speedtest-live-probe resume     # resume measuring
+speedtest-live-probe test       # run a capacity test now
+speedtest-live-probe pause      # stop capacity tests (passive sampling continues)
+speedtest-live-probe resume     # re-enable capacity tests
 speedtest-live-probe reset      # reset session peaks
 ```
 
+`pause`, `resume`, `test` and `reset` are *messages* to the running daemon — they write
+a control file and exit immediately. None of them measures anything itself.
+
 ### Configuration
 
-The probe reads two environment variables, set in its LaunchAgent plist:
+All set in the probe's LaunchAgent plist:
 
-| Variable | Default |
-|---|---|
-| `SPEEDTEST_LIVE_DOWNLOAD_URL` | `https://cachefly.cachefly.net/100mb.test` |
-| `SPEEDTEST_LIVE_UPLOAD_URL` | `https://speed.cloudflare.com/__up` |
+| Variable | Default | Meaning |
+|---|---|---|
+| `SPEEDTEST_TEST_INTERVAL` | `30m` | Time between capacity tests |
+| `SPEEDTEST_TEST_DURATION` | `6s` | Length of each capacity test |
+| `SPEEDTEST_LIVE_DOWNLOAD_URL` | CacheFly 100 MB test file | Download endpoint |
+| `SPEEDTEST_LIVE_UPLOAD_URL` | `https://speed.cloudflare.com/__up` | Upload endpoint |
 
-The download endpoint must serve a large file and tolerate sustained parallel range
-requests. Cloudflare's `__down` is deliberately **not** used — it rate-limits and the
-readout collapses.
+The download endpoint must serve a large file and tolerate sustained parallel requests.
+Cloudflare's `__down` is deliberately **not** used — it rate-limits and the readout
+collapses.
 
 ---
 
 ## How it works
 
-**Measurement.** Workers stream continuously; byte counters are atomic. Every 200 ms
-the probe samples the counters into a 500 ms rolling window and derives Mbps from the
-delta. Short window = responsive number; the 500 ms span keeps it from being noise.
+**Passive measurement.** Once a second the probe reads cumulative interface byte counts
+and diffs them. It parses `netstat -ib` rather than reading `if_data64` out of a
+`NET_RT_IFLIST2` sysctl: the direct route was tried first and the byte counters could
+not be found anywhere in the `RTM_IFINFO2` message when checked against netstat's own
+output, and `golang.org/x/net/route` does not expose interface statistics at all.
+gopsutil shells out on darwin for the same reason. Counter resets (sleep, interface
+down) are clamped to zero rather than wrapping into a huge fake spike.
+
+**Active measurement.** Workers stream continuously *while the gate is open*, which is
+only during a capacity test. Every 200 ms the probe samples atomic byte counters into a
+500 ms rolling window. The first 1.5 s is discarded — TCP slow start makes it
+unrepresentative.
 
 **Peak gating.** A session peak is only adopted once a comparable rate appears on two
 consecutive samples (`peakSustainSamples`), and the *lower* of the two is taken. A lone

@@ -39,21 +39,11 @@ final class ProbeMonitor {
         probeBinURL = home.appendingPathComponent(".local/bin/speedtest-live-probe")
     }
 
-    private var lastSampleAt: TimeInterval = 0
-
     func tick() {
         state.reload(from: cacheURL)
         rememberGood()
-        // The probe publishes once a second; this polls five times a second.
-        // Appending every poll would pad the sparkline with four duplicates per
-        // real sample, so the graph would scroll five times too fast and show a
-        // fifth of the history it appears to.
-        guard state.updatedAt != lastSampleAt else { return }
-        lastSampleAt = state.updatedAt
-        // Track the headline, not raw utilisation, so the sparkline and the
-        // number next to it never disagree about what is being shown.
-        downloadHistory.append(headlineDownload)
-        uploadHistory.append(headlineUpload)
+        downloadHistory.append(state.downloadMbps ?? lastGoodDownload)
+        uploadHistory.append(state.uploadMbps ?? lastGoodUpload)
     }
 
     private func rememberGood() {
@@ -63,52 +53,8 @@ final class ProbeMonitor {
         if let v = state.sessionUploadPeak ?? state.uploadPeak, v > 0 { lastGoodPeakUpload = v }
     }
 
-    /// Passive utilisation — what the link is carrying right now. Legitimately
-    /// 0 on an idle machine, so this must NOT fall back to the last good value
-    /// the way a capacity reading would.
     var currentDownload: Double? { state.downloadMbps ?? lastGoodDownload }
     var currentUpload: Double? { state.uploadMbps ?? lastGoodUpload }
-
-    /// Result of the last active capacity test — the "how fast is this line"
-    /// number, refreshed on a timer rather than continuously.
-    var capacityDownload: Double? { state.capacityDownload }
-    var capacityUpload: Double? { state.capacityUpload }
-
-    /// Below this, traffic is background noise rather than something the user is
-    /// doing — mDNS, push, keepalives all sit well under 1 Mbps.
-    private let liveTrafficFloor: Double = 1.0
-
-    /// A transfer in one direction drags acknowledgements back the other way, at
-    /// roughly 1-3% of the payload. A 270 Mbps download pushes ~2.5 Mbps of ACKs,
-    /// which clears the plain floor and made the upload figure flip between live
-    /// and line speed mid-download. Traffic only counts as the user's if it also
-    /// exceeds this fraction of the opposite direction.
-    private let acknowledgementFraction: Double = 0.10
-
-    /// What the menu bar actually shows.
-    ///
-    /// Utilisation alone was wrong: an idle Mac genuinely carries ~0.01 Mbps, so
-    /// the widget rendered "0" and read as broken. Line speed alone would be wrong
-    /// too — it would ignore a download in progress. So: live throughput while
-    /// something is really moving, measured line speed the rest of the time.
-    var headlineDownload: Double? {
-        if isUserTraffic(state.downloadMbps, opposite: state.uploadMbps) {
-            return state.downloadMbps
-        }
-        return capacityDownload ?? lastGoodPeakDownload ?? currentDownload
-    }
-
-    var headlineUpload: Double? {
-        if isUserTraffic(state.uploadMbps, opposite: state.downloadMbps) {
-            return state.uploadMbps
-        }
-        return capacityUpload ?? lastGoodPeakUpload ?? currentUpload
-    }
-
-    private func isUserTraffic(_ value: Double?, opposite: Double?) -> Bool {
-        guard let value, value >= liveTrafficFloor else { return false }
-        return value >= (opposite ?? 0) * acknowledgementFraction
-    }
     var peakDownload: Double? { state.sessionDownloadPeak ?? state.downloadPeak ?? lastGoodPeakDownload ?? currentDownload }
     var peakUpload: Double? { state.sessionUploadPeak ?? state.uploadPeak ?? lastGoodPeakUpload ?? currentUpload }
 

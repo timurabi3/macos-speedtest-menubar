@@ -313,11 +313,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let result = NSMutableAttributedString()
 
         result.append(NSAttributedString(
-            string: Sparkline.glyphs(values: probe.downloadHistory.values, fallback: probe.headlineDownload),
+            string: Sparkline.glyphs(values: probe.downloadHistory.values, fallback: probe.currentDownload),
             attributes: [.font: graphFont, .foregroundColor: Colors.down]
         ))
         result.append(NSAttributedString(
-            string: Format.compact(probe.headlineDownload),
+            string: Format.compact(probe.currentDownload),
             attributes: [.font: valueFont, .foregroundColor: Colors.down]
         ))
         result.append(NSAttributedString(
@@ -325,11 +325,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             attributes: [.font: spacerFont, .foregroundColor: Colors.dim]
         ))
         result.append(NSAttributedString(
-            string: Sparkline.glyphs(values: probe.uploadHistory.values, fallback: probe.headlineUpload),
+            string: Sparkline.glyphs(values: probe.uploadHistory.values, fallback: probe.currentUpload),
             attributes: [.font: graphFont, .foregroundColor: Colors.up]
         ))
         result.append(NSAttributedString(
-            string: Format.compact(probe.headlineUpload),
+            string: Format.compact(probe.currentUpload),
             attributes: [.font: valueFont, .foregroundColor: Colors.up]
         ))
 
@@ -345,10 +345,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private func buildTooltip() -> String {
         [
-            "SpeedBar",
-            "In use: ↓ \(Format.mbps(probe.currentDownload)) ↑ \(Format.mbps(probe.currentUpload)) Mbps",
-            "Line speed: ↓ \(Format.mbps(probe.capacityDownload)) ↑ \(Format.mbps(probe.capacityUpload)) Mbps",
-            "Tested \(probe.state.lastTestText), next \(probe.state.nextTestText)",
+            "Live Speedtest",
+            "Max down: \(Format.mbps(probe.peakDownload)) Mbps",
+            "Max up: \(Format.mbps(probe.peakUpload)) Mbps",
+            "Live down: \(Format.mbps(probe.currentDownload)) Mbps",
+            "Live up: \(Format.mbps(probe.currentUpload)) Mbps",
             "Status: \(probe.state.isStale ? "stale" : probe.state.status)",
             "Updated: \(probe.state.ageText)"
         ].joined(separator: "\n")
@@ -377,35 +378,24 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             menu.addItem(item)
         }
 
-        disabled("SpeedBar")
-        // Two different quantities, and conflating them is the easiest way to
-        // misread this menu: "in use" is measured passively and is 0 when you are
-        // not doing anything; "line speed" is what the last active test achieved.
-        disabled("In use   ↓ \(Format.mbps(probe.currentDownload))  ↑ \(Format.mbps(probe.currentUpload)) Mbps")
-        disabled("Line speed  ↓ \(Format.mbps(probe.capacityDownload))  ↑ \(Format.mbps(probe.capacityUpload)) Mbps")
-        disabled("Best seen  ↓ \(Format.mbps(probe.peakDownload))  ↑ \(Format.mbps(probe.peakUpload)) Mbps")
-
-        menu.addItem(NSMenuItem.separator())
-        if probe.state.isTesting {
-            disabled("Testing line speed…")
-        } else {
-            disabled("Tested \(probe.state.lastTestText), next \(probe.state.nextTestText)")
-        }
+        disabled("Live Speedtest v3")
+        disabled("Live down: \(Format.mbps(probe.currentDownload)) Mbps")
+        disabled("Live up: \(Format.mbps(probe.currentUpload)) Mbps")
+        disabled("Max down: \(Format.mbps(probe.peakDownload)) Mbps")
+        disabled("Max up: \(Format.mbps(probe.peakUpload)) Mbps")
         disabled("Status: \(probe.state.isStale ? "stale" : probe.state.status)")
+        disabled("Updated: \(probe.state.ageText)")
 
         if let error = probe.state.error {
             disabled("Error: \(error)")
         }
 
         menu.addItem(NSMenuItem.separator())
-        action("Run Speed Test Now", #selector(runSpeedTest))
         action("Kickstart Probe", #selector(kickstartProbe))
         action("Reset Peaks", #selector(resetPeaks))
         action("Reinstall Probe", #selector(reinstallProbe))
         action("Quit", #selector(quitApp))
     }
-
-    @objc private func runSpeedTest() { probe.runProbe(["test"]) }
 
     @objc private func kickstartProbe() { probe.kickstart(force: true) }
 

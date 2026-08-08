@@ -8,20 +8,10 @@ final class SpeedtestState {
     private(set) var uploadPeak: Double?
     private(set) var sessionDownloadPeak: Double?
     private(set) var sessionUploadPeak: Double?
-    /// Result of the last active capacity test. Distinct from downloadMbps /
-    /// uploadMbps, which are passive utilisation — what is actually flowing right
-    /// now, normally near zero on an idle machine.
-    private(set) var capacityDownload: Double?
-    private(set) var capacityUpload: Double?
-    private(set) var lastTestAt: TimeInterval = 0
-    private(set) var nextTestAt: TimeInterval = 0
     private(set) var status: String = "waiting"
-    private(set) var phase: String = ""
     private(set) var error: String?
     private(set) var updatedAt: TimeInterval = 0
     private(set) var raw: [String: Any] = [:]
-
-    var isTesting: Bool { phase == "testing" }
 
     var isStale: Bool {
         Date().timeIntervalSince1970 - updatedAt > 3.0
@@ -54,39 +44,9 @@ final class SpeedtestState {
         uploadPeak = num("upload_peak_mbps")
         sessionDownloadPeak = num("session_download_peak_mbps")
         sessionUploadPeak = num("session_upload_peak_mbps")
-        capacityDownload = num("capacity_download_mbps")
-        capacityUpload = num("capacity_upload_mbps")
-        lastTestAt = num("last_test_at") ?? 0
-        nextTestAt = num("next_test_at") ?? 0
         status = str("status") ?? "waiting"
-        phase = str("phase") ?? ""
         error = str("error")
         updatedAt = num("updated_at") ?? updatedAt
-    }
-
-    /// "4m ago" / "never" — for the last capacity test, not the last state write.
-    var lastTestText: String {
-        guard lastTestAt > 0 else { return "never" }
-        return Self.relative(seconds: Int(max(0, Date().timeIntervalSince1970 - lastTestAt)), suffix: "ago")
-    }
-
-    var nextTestText: String {
-        guard nextTestAt > 0 else { return "soon" }
-        let seconds = Int(nextTestAt - Date().timeIntervalSince1970)
-        if seconds <= 0 { return "due" }
-        return "in " + Self.relative(seconds: seconds, suffix: "")
-    }
-
-    private static func relative(seconds: Int, suffix: String) -> String {
-        let unit: String
-        if seconds < 60 {
-            unit = "\(seconds)s"
-        } else if seconds < 3600 {
-            unit = "\(seconds / 60)m"
-        } else {
-            unit = "\(seconds / 3600)h"
-        }
-        return suffix.isEmpty ? unit : "\(unit) \(suffix)"
     }
 
     private func num(_ key: String) -> Double? {

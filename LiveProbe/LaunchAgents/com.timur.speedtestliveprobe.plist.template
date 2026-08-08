@@ -15,12 +15,6 @@
     <string>https://cachefly.cachefly.net/100mb.test</string>
     <key>SPEEDTEST_LIVE_UPLOAD_URL</key>
     <string>https://speed.cloudflare.com/__up</string>
-    <!-- How often a capacity test runs, and how long each one lasts. Passive
-         utilisation sampling continues between tests. -->
-    <key>SPEEDTEST_TEST_INTERVAL</key>
-    <string>30m</string>
-    <key>SPEEDTEST_TEST_DURATION</key>
-    <string>6s</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>

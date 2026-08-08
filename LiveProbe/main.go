@@ -30,33 +30,13 @@ const (
 	controlPause        = "pause"
 	controlResume       = "resume"
 	controlReset        = "reset"
-	controlTest         = "test"
 	sampleInterval      = 200 * time.Millisecond
 	rollingWindow       = 500 * time.Millisecond
-
-	// HYBRID measurement. Two different questions, answered two different ways:
-	//
-	//   "what am I using right now?"  -> passive: diff the OS interface byte
-	//                                    counters. Costs nothing, always live.
-	//   "how fast is this line?"      -> active: saturate the link briefly and
-	//                                    measure. Costs exactly what it measures.
-	//
-	// The previous always-on design answered the second question continuously,
-	// which meant permanently saturating the connection: measured at ~235 Mbps
-	// down and ~44 Mbps up sustained, i.e. ~125 GB/hour or ~3 TB/day, plus the
-	// same volume hammering CacheFly's and Cloudflare's free test endpoints from
-	// a single IP. A 6s test every 30min is a 0.33% duty cycle -- about 10 GB/day
-	// -- while passive sampling keeps the readout moving in between.
-	passiveInterval    = 1 * time.Second
-	activeTestInterval = 30 * time.Minute
-	activeTestDuration = 6 * time.Second
-	// TCP slow start and connection setup make the first moment of a burst
-	// unrepresentative; ignore it when picking the peak.
-	activeTestWarmup = 1500 * time.Millisecond
-
-	// The traffic gate. Workers stay alive for the process lifetime but only
-	// generate traffic while the gate is open, which is exactly the duration of a
-	// capacity test.
+	// ALWAYS-ON: download and upload workers run continuously and in parallel, so
+	// both live values are genuinely fresh every sample and the readout never
+	// greys out. (Timur, 2026-07-24: constant live speed over bandwidth savings.)
+	// activePhaseMeasuring keeps workers generating traffic; activePhaseIdle is
+	// only entered on an explicit pause command, never on a timed rest.
 	activePhaseMeasuring = int64(0)
 	activePhaseIdle      = int64(1)
 	// A session peak is only accepted once a comparable rate is seen on at least
@@ -76,16 +56,9 @@ type State struct {
 	UploadPeakMbps          *float64 `json:"upload_peak_mbps"`
 	SessionDownloadPeakMbps *float64 `json:"session_download_peak_mbps"`
 	SessionUploadPeakMbps   *float64 `json:"session_upload_peak_mbps"`
-	// Capacity: what the last active test achieved. Distinct from
-	// Download/UploadMbps, which are passive utilisation -- what is actually
-	// flowing, usually near zero on an idle machine.
-	CapacityDownloadMbps *float64 `json:"capacity_download_mbps"`
-	CapacityUploadMbps   *float64 `json:"capacity_upload_mbps"`
-	LastTestAt           int64    `json:"last_test_at"`
-	NextTestAt           int64    `json:"next_test_at"`
-	UpdatedAt            int64    `json:"updated_at"`
-	StartedAt            int64    `json:"started_at"`
-	Error                any      `json:"error"`
+	UpdatedAt               int64    `json:"updated_at"`
+	StartedAt               int64    `json:"started_at"`
+	Error                   any      `json:"error"`
 }
 
 type controlCommand struct {
@@ -180,10 +153,8 @@ func main() {
 		os.Exit(pauseProbe())
 	case "resume":
 		os.Exit(resumeProbe())
-	case "test":
-		os.Exit(requestCapacityTest())
 	default:
-		fmt.Fprintf(os.Stderr, "usage: %s [run|status|reset|pause|resume|test]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "usage: %s [run|status|reset|pause|resume]\n", os.Args[0])
 		os.Exit(2)
 	}
 }
@@ -208,11 +179,11 @@ func run() int {
 	var c counters
 	var activePhase atomic.Int64
 	started := time.Now()
-	// Start with the traffic gate CLOSED. The workers exist for the lifetime of
-	// the process but only generate traffic during a capacity test.
-	activePhase.Store(activePhaseIdle)
+	activePhase.Store(activePhaseMeasuring)
 	downURL := downloadURL()
 	upURL := uploadURL()
+	// Download and upload workers run concurrently; the measure/idle gate below
+	// pauses all of them together during the rest window.
 	for i := 0; i < downloadWorkerCount; i++ {
 		go downloadWorker(ctx, client, downURL, &c, &activePhase)
 	}
@@ -220,65 +191,59 @@ func run() int {
 		go uploadWorker(ctx, client, upURL, &c, &activePhase)
 	}
 
-	var (
-		sessionDownPeak float64
-		sessionUpPeak   float64
-		capacityDown    float64
-		capacityUp      float64
-		liveDown        float64
-		liveUp          float64
-		lastTestAt      time.Time
-		paused          bool
-	)
+	window := newRateWindow(rollingWindow)
+	window.add(started, 0, 0)
+	var sessionDownPeak float64
+	var sessionUpPeak float64
+	var lastDownMbps float64
+	var lastUpMbps float64
+	var previousDownBytes int64
+	var previousUpBytes int64
+	// Consecutive-sample counters feeding the sustained-peak gate.
+	downPeakStreak := newPeakStreak()
+	upPeakStreak := newPeakStreak()
 	lastControlTimestamp := started.UnixNano()
-
-	prevIn, prevOut, err := interfaceTotals()
-	if err != nil {
-		logProbeError("counters", err)
-	}
-	prevSampledAt := started
-
-	interval := testInterval()
-	duration := testDuration()
-
-	publish := func(now time.Time, status string, phase string, pid any, down float64, up float64) {
-		var lastTest, nextTest int64
-		if !lastTestAt.IsZero() {
-			lastTest = lastTestAt.Unix()
-			nextTest = lastTestAt.Add(interval).Unix()
-		}
-		_ = writeStateFile(statePath, State{
-			Mode: "hybrid", Status: status, Phase: phase, PID: pid,
-			DownloadMbps: floatPtr(down), UploadMbps: floatPtr(up),
-			DownloadPeakMbps: floatPtr(capacityDown), UploadPeakMbps: floatPtr(capacityUp),
-			SessionDownloadPeakMbps: floatPtr(sessionDownPeak), SessionUploadPeakMbps: floatPtr(sessionUpPeak),
-			CapacityDownloadMbps: floatPtr(capacityDown), CapacityUploadMbps: floatPtr(capacityUp),
-			LastTestAt: lastTest, NextTestAt: nextTest,
-			UpdatedAt: now.Unix(), StartedAt: started.Unix(), Error: nil,
-		})
-	}
-
-	ticker := time.NewTicker(passiveInterval)
+	// Set by an explicit pause command; the only thing that closes the measuring
+	// gate. A paused probe keeps ticking and keeps publishing fresh timestamps so
+	// the menu bar app sees "paused", not "stale".
+	paused := false
+	ticker := time.NewTicker(sampleInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			publish(time.Now(), "stopped", "stopped", nil, liveDown, liveUp)
+			_ = writeStateFile(statePath, State{
+				Mode: "live", Status: "stopped", Phase: "stopped", PID: nil,
+				DownloadMbps: floatPtr(lastDownMbps), UploadMbps: floatPtr(lastUpMbps),
+				DownloadPeakMbps: floatPtr(lastDownMbps), UploadPeakMbps: floatPtr(lastUpMbps),
+				SessionDownloadPeakMbps: floatPtr(sessionDownPeak), SessionUploadPeakMbps: floatPtr(sessionUpPeak),
+				UpdatedAt: time.Now().Unix(), StartedAt: started.Unix(), Error: nil,
+			})
 			return 0
 		case now := <-ticker.C:
-			// Passive: diff the OS interface counters. This is what the link is
-			// actually carrying, and it costs nothing to observe.
-			if in, out, err := interfaceTotals(); err != nil {
-				logProbeError("counters", err)
-			} else {
-				elapsed := now.Sub(prevSampledAt)
-				liveDown = mbpsFromBytes(deltaBytes(in, prevIn), elapsed)
-				liveUp = mbpsFromBytes(deltaBytes(out, prevOut), elapsed)
-				prevIn, prevOut, prevSampledAt = in, out, now
+			// Always-on: keep the measuring gate open every tick so workers never
+			// rest and both live values stay fresh.
+			if !paused {
+				activePhase.Store(activePhaseMeasuring)
 			}
+			downloadBytes := c.download.Load()
+			uploadBytes := c.upload.Load()
+			window.add(now, downloadBytes, uploadBytes)
+			rawDown, rawUp := window.rates(now)
+			down, up := retainLiveRates(
+				rawDown,
+				rawUp,
+				lastDownMbps,
+				lastUpMbps,
+				downloadBytes > previousDownBytes,
+				uploadBytes > previousUpBytes,
+			)
+			previousDownBytes = downloadBytes
+			previousUpBytes = uploadBytes
+			lastDownMbps = down
+			lastUpMbps = up
 
-			testRequested := false
 			command, hasCommand, err := pendingControlCommand(controlPath, lastControlTimestamp)
 			if err != nil {
 				logProbeError("control", err)
@@ -287,106 +252,52 @@ func run() int {
 				lastControlTimestamp = command.Timestamp
 				switch command.Command {
 				case controlReset:
-					resetSessionPeaks(&sessionDownPeak, &sessionUpPeak, capacityDown, capacityUp)
+					resetSessionPeaks(&sessionDownPeak, &sessionUpPeak, down, up)
+					if err := clearControlFileIfSame(controlPath, command); err != nil {
+						logProbeError("control", err)
+					}
 				case controlPause:
+					if down > sessionDownPeak {
+						sessionDownPeak = down
+					}
+					if up > sessionUpPeak {
+						sessionUpPeak = up
+					}
+					// Close the gate and keep looping. Returning here (the original
+					// behaviour) was a no-op: the LaunchAgent sets KeepAlive=true, so
+					// launchd restarted the probe within ~1s and it came back
+					// measuring — pause never actually paused.
 					paused = true
+					activePhase.Store(activePhaseIdle)
+					if err := clearControlFileIfSame(controlPath, command); err != nil {
+						logProbeError("control", err)
+					}
 				case controlResume:
 					paused = false
-				case controlTest:
-					testRequested = true
-				}
-				if err := clearControlFileIfSame(controlPath, command); err != nil {
-					logProbeError("control", err)
-				}
-			}
-
-			if paused {
-				// Passive sampling continues while paused -- it generates no
-				// traffic, so there is nothing to pause about it. What stops is
-				// capacity testing.
-				status, phase, pid := probeStatus(true, false, os.Getpid())
-				publish(now, status, phase, pid, liveDown, liveUp)
-				continue
-			}
-
-			if testRequested || lastTestAt.IsZero() || now.Sub(lastTestAt) >= interval {
-				down, up := runCapacityTest(ctx, &c, &activePhase, duration, func(d float64, u float64) {
-					status, phase, pid := probeStatus(false, true, os.Getpid())
-					publish(time.Now(), status, phase, pid, d, u)
-				})
-				if ctx.Err() != nil {
-					publish(time.Now(), "stopped", "stopped", nil, liveDown, liveUp)
-					return 0
-				}
-				lastTestAt = time.Now()
-				if down > 0 {
-					capacityDown = down
-				}
-				if up > 0 {
-					capacityUp = up
-				}
-				if capacityDown > sessionDownPeak {
-					sessionDownPeak = capacityDown
-				}
-				if capacityUp > sessionUpPeak {
-					sessionUpPeak = capacityUp
-				}
-				// The burst was our own traffic. Resync the passive baseline so the
-				// next sample doesn't bill the user for the test we just ran.
-				if in, out, err := interfaceTotals(); err == nil {
-					prevIn, prevOut, prevSampledAt = in, out, time.Now()
+					activePhase.Store(activePhaseMeasuring)
+					if err := clearControlFileIfSame(controlPath, command); err != nil {
+						logProbeError("control", err)
+					}
 				}
 			}
 
-			status, phase, pid := probeStatus(false, false, os.Getpid())
-			publish(now, status, phase, pid, liveDown, liveUp)
-		}
-	}
-}
-
-// runCapacityTest opens the traffic gate, measures achievable throughput for
-// activeTestDuration, then closes it again. Returns the sustained peak seen.
-//
-// It publishes on every inner tick. The burst lasts several seconds and the menu
-// bar app treats a state file more than a few seconds old as a dead probe, so a
-// silent test would trigger the very restart machinery that used to storm.
-func runCapacityTest(ctx context.Context, c *counters, activePhase *atomic.Int64, duration time.Duration, publish func(down float64, up float64)) (float64, float64) {
-	activePhase.Store(activePhaseMeasuring)
-	defer activePhase.Store(activePhaseIdle)
-
-	start := time.Now()
-	window := newRateWindow(rollingWindow)
-	window.add(start, c.download.Load(), c.upload.Load())
-
-	downStreak := newPeakStreak()
-	upStreak := newPeakStreak()
-	var bestDown, bestUp float64
-
-	deadline := start.Add(duration)
-	warmupUntil := start.Add(activeTestWarmup)
-	ticker := time.NewTicker(sampleInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return bestDown, bestUp
-		case now := <-ticker.C:
-			window.add(now, c.download.Load(), c.upload.Load())
-			down, up := window.rates(now)
-			publish(down, up)
-			// Ignore the ramp: TCP slow start makes the first moment meaningless.
-			if now.After(warmupUntil) {
-				if adopt, ok := downStreak.accept(down, bestDown); ok {
-					bestDown = adopt
-				}
-				if adopt, ok := upStreak.accept(up, bestUp); ok {
-					bestUp = adopt
-				}
+			// Only accept a new session peak when the rate is sustained across
+			// consecutive samples (see peakSustainSamples), filtering lone spikes.
+			if adopt, ok := downPeakStreak.accept(down, sessionDownPeak); ok {
+				sessionDownPeak = adopt
 			}
-			if !now.Before(deadline) {
-				return bestDown, bestUp
+			if adopt, ok := upPeakStreak.accept(up, sessionUpPeak); ok {
+				sessionUpPeak = adopt
 			}
+
+			status, phase, pid := probeStatus(paused, os.Getpid())
+			_ = writeStateFile(statePath, State{
+				Mode: "live", Status: status, Phase: phase, PID: pid,
+				DownloadMbps: floatPtr(down), UploadMbps: floatPtr(up),
+				DownloadPeakMbps: floatPtr(down), UploadPeakMbps: floatPtr(up),
+				SessionDownloadPeakMbps: floatPtr(sessionDownPeak), SessionUploadPeakMbps: floatPtr(sessionUpPeak),
+				UpdatedAt: now.Unix(), StartedAt: started.Unix(), Error: nil,
+			})
 		}
 	}
 }
@@ -599,19 +510,7 @@ func resumeProbe() int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	return writeControlState("running", "idle", now)
-}
-
-// requestCapacityTest asks the running daemon to run a capacity test now instead
-// of waiting for the next scheduled one. Like pause/resume, it is a message --
-// it never measures anything itself.
-func requestCapacityTest() int {
-	now := time.Now()
-	if err := writeControlCommand(homePath(controlRelPath), controlTest, now); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
+	return writeControlState("running", "parallel", now)
 }
 
 func resetPeaks() int {
@@ -756,27 +655,20 @@ func clearControlFileIfSame(path string, expected controlCommand) error {
 	return nil
 }
 
-// probeStatus maps the runtime flags onto the status/phase/pid triple published
-// in latest.json.
-//
-// A paused probe reports "paused" with no PID but keeps refreshing updated_at, so
-// the menu bar app renders "paused" rather than treating frozen numbers as a dead
-// probe and trying to restart it. "idle" means passive sampling only -- live, but
-// generating no traffic; "testing" means a capacity burst is in flight.
-func probeStatus(paused bool, testing bool, pid int) (string, string, any) {
-	switch {
-	case paused:
+// probeStatus maps the paused flag onto the status/phase/pid triple published in
+// latest.json. A paused probe reports "paused" with no PID but keeps refreshing
+// updated_at, so the menu bar app renders "paused" rather than treating the
+// frozen numbers as a dead probe and trying to restart it.
+func probeStatus(paused bool, pid int) (string, string, any) {
+	if paused {
 		return "paused", "paused", nil
-	case testing:
-		return "running", "testing", pid
-	default:
-		return "running", "idle", pid
 	}
+	return "running", "parallel", pid
 }
 
 func isValidControlCommand(command string) bool {
 	switch command {
-	case controlPause, controlResume, controlReset, controlTest:
+	case controlPause, controlResume, controlReset:
 		return true
 	default:
 		return false
@@ -914,34 +806,6 @@ func homePath(rel string) string {
 		return rel
 	}
 	return filepath.Join(home, rel)
-}
-
-// testInterval and testDuration are the bandwidth dial, overridable from the
-// LaunchAgent so the trade-off can be retuned without a rebuild.
-//
-// Measured cost at the defaults: one 6s test moves ~308 MB on a 500 Mbit line,
-// so 48 tests/day ≈ 15 GB/day. Doubling the interval halves that; halving the
-// duration halves it again at the cost of a noisier capacity figure (TCP needs a
-// moment to ramp, which is what activeTestWarmup already discards).
-func testInterval() time.Duration {
-	return durationEnv("SPEEDTEST_TEST_INTERVAL", activeTestInterval)
-}
-
-func testDuration() time.Duration {
-	return durationEnv("SPEEDTEST_TEST_DURATION", activeTestDuration)
-}
-
-func durationEnv(name string, fallback time.Duration) time.Duration {
-	raw := strings.TrimSpace(os.Getenv(name))
-	if raw == "" {
-		return fallback
-	}
-	value, err := time.ParseDuration(raw)
-	if err != nil || value <= 0 {
-		fmt.Fprintf(os.Stderr, "%s=%q is not a valid duration, using %v\n", name, raw, fallback)
-		return fallback
-	}
-	return value
 }
 
 func downloadURL() string {

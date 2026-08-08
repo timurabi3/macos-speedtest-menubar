@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.timur.speedtestmenubar</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__HOME__/Applications/SpeedtestMenuBar.app/Contents/MacOS/SpeedtestMenuBar</string>
+    </array>
+    <!-- exit(1) (watchdog self-restart) => relaunch; exit(0) (user Quit) => stay quit -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>2</integer>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Caches/speedtest-menubar/native-app.err.log</string>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Caches/speedtest-menubar/native-app.out.log</string>
+</dict>
+</plist>

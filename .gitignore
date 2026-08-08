@@ -1,0 +1,17 @@
+# Build artifacts
+.build/
+build/
+
+# macOS
+.DS_Store
+
+# Secrets — never commit
+.env
+.env.*
+*.secrets.local
+.claude-secrets.local
+
+# Rendered LaunchAgents (generated from the .template files at install time,
+# contain an absolute $HOME path)
+*.plist
+!*.plist.template

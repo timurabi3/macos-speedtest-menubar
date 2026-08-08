@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.timur.speedtestliveprobe</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__HOME__/.local/bin/speedtest-live-probe</string>
+    <string>run</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>SPEEDTEST_LIVE_DOWNLOAD_URL</key>
+    <string>https://cachefly.cachefly.net/100mb.test</string>
+    <key>SPEEDTEST_LIVE_UPLOAD_URL</key>
+    <string>https://speed.cloudflare.com/__up</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Caches/speedtest-menubar/liveprobe.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Caches/speedtest-menubar/liveprobe.err.log</string>
+</dict>
+</plist>

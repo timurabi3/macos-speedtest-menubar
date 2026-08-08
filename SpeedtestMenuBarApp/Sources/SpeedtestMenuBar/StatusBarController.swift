@@ -313,11 +313,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let result = NSMutableAttributedString()
 
         result.append(NSAttributedString(
-            string: Sparkline.glyphs(values: probe.downloadHistory.values, fallback: probe.currentDownload),
+            string: Sparkline.glyphs(values: probe.downloadHistory.values, fallback: probe.headlineDownload),
             attributes: [.font: graphFont, .foregroundColor: Colors.down]
         ))
         result.append(NSAttributedString(
-            string: Format.compact(probe.currentDownload),
+            string: Format.compact(probe.headlineDownload),
             attributes: [.font: valueFont, .foregroundColor: Colors.down]
         ))
         result.append(NSAttributedString(
@@ -325,11 +325,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             attributes: [.font: spacerFont, .foregroundColor: Colors.dim]
         ))
         result.append(NSAttributedString(
-            string: Sparkline.glyphs(values: probe.uploadHistory.values, fallback: probe.currentUpload),
+            string: Sparkline.glyphs(values: probe.uploadHistory.values, fallback: probe.headlineUpload),
             attributes: [.font: graphFont, .foregroundColor: Colors.up]
         ))
         result.append(NSAttributedString(
-            string: Format.compact(probe.currentUpload),
+            string: Format.compact(probe.headlineUpload),
             attributes: [.font: valueFont, .foregroundColor: Colors.up]
         ))
 

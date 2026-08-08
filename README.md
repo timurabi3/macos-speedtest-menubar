@@ -16,43 +16,14 @@ you asked.
 
 ## Two numbers, measured two different ways
 
-The menu bar shows **what you're using**. The menu also shows **how fast the line is**.
-Those are different questions and they cost very different amounts to answer.
-
-| | How | Cost |
+| | Question | How |
 |---|---|---|
-| **In use** — current throughput | Passive: diff the OS interface byte counters | free |
-| **Line speed** — what the link can do | Active: saturate the link for 6s, measure | ~300 MB per test |
+| **In use** | What is my connection carrying right now? | Passive — diff the OS interface byte counters, once a second |
+| **Line speed** | How fast is this connection? | Active — saturate the link for 6s, every 30 minutes or on demand |
 
-Passive sampling runs once a second, forever, for nothing. A capacity test runs every
-30 minutes, or when you ask for it.
-
-### Bandwidth
-
-**~15 GB/day at the defaults** (48 tests × ~308 MB on a 500 Mbit line), measured rather
-than estimated. Fine on any normal home connection; still worth thinking about on a
-metered or mobile one, where you should raise the interval.
-
-Earlier versions measured continuously, which meant permanently saturating the link:
-~235 Mbps down and ~44 Mbps up sustained, **~3 TB/day**. That is what the dial below
-exists to prevent.
-
-Tune it in the LaunchAgent — no rebuild needed:
-
-```xml
-<key>SPEEDTEST_TEST_INTERVAL</key><string>30m</string>
-<key>SPEEDTEST_TEST_DURATION</key><string>6s</string>
-```
-
-| Setting | Cost |
-|---|---|
-| `30m` / `6s` (default) | ~15 GB/day |
-| `1h` / `6s` | ~7 GB/day |
-| `2h` / `4s` | ~2.5 GB/day |
-| `24h` / `6s` | ~0.3 GB/day (plus manual tests) |
-
-Bad or zero values fall back to the defaults — a zero interval would mean "test
-continuously", which is exactly the behaviour this replaced.
+The menu bar shows whichever is meaningful: live throughput while something is actually
+transferring, line speed the rest of the time. An idle machine carries ~0.01 Mbps, so
+showing utilisation around the clock would just read as a broken widget.
 
 ---
 

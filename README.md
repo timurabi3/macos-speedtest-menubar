@@ -12,8 +12,8 @@ Unlike a "run a speedtest now" utility, this measures **continuously** — the n
 in your menu bar is what your link is doing right now, not what it did the last time
 you asked.
 
-**<img width="188" height="323" alt="image" src="https://github.com/user-attachments/assets/aa4a5ff3-5f1e-41d8-8b76-83624f71b011" />
-**
+<img width="194" height="322" alt="image" src="https://github.com/user-attachments/assets/7b32e076-258a-4702-a2d4-091e3e0d0116" />
+
 ---
 
 ## Always-on by design

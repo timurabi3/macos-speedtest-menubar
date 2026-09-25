@@ -20,9 +20,9 @@
       .tag{font:500 24px 'Segoe UI',Ubuntu,Helvetica,Arial,sans-serif;fill:#a7f3d0}
       .mono{font:700 34px 'SFMono-Regular',Consolas,monospace}
       .lbl{font:600 15px 'Segoe UI',sans-serif;fill:#94a3b8}
-      .rise{opacity:0;animation:rise .7s ease-out forwards}
+      .rise{animation:rise .7s ease-out both}
       .d1{animation-delay:.1s}.d2{animation-delay:.3s}
-      @keyframes rise{to{opacity:1}}
+      @keyframes rise{from{opacity:0}to{opacity:1}}
       .dash{stroke-dasharray:6 10;animation:march 1s linear infinite}
       @keyframes march{to{stroke-dashoffset:-32}}
     </style>

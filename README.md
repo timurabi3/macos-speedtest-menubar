@@ -6,7 +6,7 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-22c55e.svg?style=flat-square"></a>
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-000000.svg?style=flat-square&logo=apple&logoColor=white">
   <img alt="Go + Swift" src="https://img.shields.io/badge/Go%20%2B%20Swift-menu%20bar-00ADD8.svg?style=flat-square&logo=go&logoColor=white">
-  <img alt="Updated 5x per second" src="https://img.shields.io/badge/refresh-5%C3%97%2Fsec-4ade80.svg?style=flat-square">
+  <img alt="Refreshes 5x per second" src="https://img.shields.io/badge/refresh-5%C3%97%20per%20sec-4ade80.svg?style=flat-square">
   <img alt="Always on" src="https://img.shields.io/badge/measurement-continuous-ef4444.svg?style=flat-square">
 </p>
 

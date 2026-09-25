@@ -20,9 +20,9 @@
       .tag{font:500 24px 'Segoe UI',Ubuntu,Helvetica,Arial,sans-serif;fill:#a7f3d0}
       .mono{font:700 34px 'SFMono-Regular',Consolas,monospace}
       .lbl{font:600 15px 'Segoe UI',sans-serif;fill:#94a3b8}
-      .rise{opacity:0;transform:translateY(12px);animation:rise .7s ease-out forwards}
+      .rise{opacity:0;animation:rise .7s ease-out forwards}
       .d1{animation-delay:.1s}.d2{animation-delay:.3s}
-      @keyframes rise{to{opacity:1;transform:translateY(0)}}
+      @keyframes rise{to{opacity:1}}
       .dash{stroke-dasharray:6 10;animation:march 1s linear infinite}
       @keyframes march{to{stroke-dashoffset:-32}}
     </style>
@@ -35,7 +35,7 @@
   <rect x="0" y="0" width="1200" height="5" fill="url(#dl)"/>
 
   <g class="rise d1"><text x="72" y="120" class="title">SpeedBar</text></g>
-  <g class="rise d2"><text x="76" y="160" class="tag">Live download &amp; upload in your macOS menu bar — updated 5&#215;/sec.</text></g>
+  <g class="rise d2"><text x="76" y="160" class="tag">Live download &amp; upload, right in your menu bar.</text></g>
 
   <!-- live readout -->
   <g transform="translate(76,210)" class="rise d2">

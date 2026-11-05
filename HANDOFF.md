@@ -68,3 +68,7 @@ Deployed to `~/Applications/SpeedtestMenuBar.app`, with the previous bundle pres
 Timur explicitly chose continuous connection-speed testing even while idle after the passive traffic display showed near-zero readings. Restored the original live probe display, with Restart Probe, Restart App and Reset Peaks controls. The guard opt-in marker `~/.config/network-health-guard/allow-continuous-probe` was created, and `com.timur.speedtestliveprobe` was enabled and loaded. This intentionally generates substantial continuous network traffic. The earlier passive-only section above is superseded. Automatic stale recovery is throttled to once per 30 seconds; manual restart enables and bootstraps the agent if necessary.
 
 Release build, signing, real menu actions, fresh probe readings, and running launchd services were checked. The guard script was run with the marker and left the probe enabled. Local and remote main remain unrelated histories.
+
+## 2026-11-05 — continuous bandwidth investigation
+
+User requests identical appearance and equally fresh accurate live tests with substantially less bandwidth interference. On/off/on five-second en0 samples: 431.66/43.35, 0.38/0.18, 279.45/45.89 Mbps down/up. Probe restored. Code and research findings in `docs/investigations/2026-11-05-continuous-probe-bandwidth.md`. No compatible implementation found; UI and probe code unchanged. Do not equate PHY link rate, available capacity estimates and measured bulk throughput. Requires agreement on a measurement tradeoff before substituting a lower-impact mechanism.

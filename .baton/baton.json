@@ -2,7 +2,7 @@
   "task": "Restore continuous live speed tests",
   "goal": "Show continuous measured download and upload speeds, including while idle",
   "status": "done",
-  "handoffNote": "User explicitly opted in to continuous bandwidth-consuming speed tests. Guard marker exists; probe enabled and running. Restart Probe, Restart App, and Reset Peaks verified. Earlier passive-only handoff superseded.",
+  "handoffNote": "Bandwidth investigation: on/off/on en0 evidence confirms probe consumes hundreds of Mbps. No validated mechanism satisfies identical fresh throughput measurements with negligible bandwidth. Continuous probe restored, UI/code unchanged. See docs/investigations/2026-11-05-continuous-probe-bandwidth.md. Requested efficiency outcome unresolved.",
   "done": [
     "Patched /Users/timur_Abi/.local/share/speedtest-menubar/SpeedtestMenuBar.swift to use sharp attributed menubar text like D53.6 U34.6 instead of an image-only status item that was visually blank.",
     "Rebuilt /Users/timur_Abi/Applications/SpeedtestMenuBar.app/Contents/MacOS/SpeedtestMenuBar with swiftc -O -framework Cocoa and ad-hoc signed the app.",
@@ -36,6 +36,6 @@
   ],
   "files": [],
   "lastAgent": "codex",
-  "updatedAt": "2026-11-05T00:59:46.496951+00:00",
+  "updatedAt": "2026-11-05T01:08:26.239269+00:00",
   "passCount": 2
 }

@@ -1,8 +1,8 @@
 {
-  "task": "Replace ugly D/U Speedtest menubar design with compact graph UI",
-  "goal": "Keep Timur's macOS Speedtest menu-bar widget polished, compact, visible, and live.",
+  "task": "Passive network activity and app recovery",
+  "goal": "Show live activity without continuous speedtest traffic and provide usable recovery controls.",
   "status": "done",
-  "handoffNote": "Reworked the menubar design after user said D/U looked ugly. Used Baton MCP, tool discovery, Figma MCP check (not enabled in app), and baseline-ui skill constraints. Final design is text-rendered Unicode mini-sparklines, not image+title, because macOS kept placing the image+title variant under the Clock. Final visible title form is like '▁▅█517 █▅▁42': green 3-bar download mini graph + compact download max, red 3-bar upload mini graph + compact upload max. Position is stable with defaults domain com.timur.speedtestmenubar, key NSStatusItem Preferred Position SpeedtestMenuBarStatusItem=974. Final Accessibility position was x=957, size 94x24, title ▁▅█517 █▅▁42. Live cache was fresh and speedtest-live-probe was running.",
+  "handoffNote": "2026-11-05: passive en* interface counters; Restart App, Reset Peaks, and explicit probe restart failure. Continuous probe remains disabled by network guard. Local main and origin/main have unrelated histories; do not force-push.",
   "done": [
     "Patched /Users/timur_Abi/.local/share/speedtest-menubar/SpeedtestMenuBar.swift to use sharp attributed menubar text like D53.6 U34.6 instead of an image-only status item that was visually blank.",
     "Rebuilt /Users/timur_Abi/Applications/SpeedtestMenuBar.app/Contents/MacOS/SpeedtestMenuBar with swiftc -O -framework Cocoa and ad-hoc signed the app.",
@@ -36,6 +36,6 @@
   ],
   "files": [],
   "lastAgent": "codex",
-  "updatedAt": "2026-07-11T20:30:20.383Z",
+  "updatedAt": "2026-11-05T00:56:12.800070+00:00",
   "passCount": 2
 }

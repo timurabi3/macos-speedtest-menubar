@@ -56,3 +56,9 @@ Secondary bugs fixed in the same pass (v2 code, `~/.local/share/speedtest-menuba
 - Menu "Quit" exits 0 on purpose → stays quit until next login or manual `launchctl kickstart`.
 - Do NOT reintroduce the CGWindowList "windowServerConfirmsItem" check (false-dead every tick).
 - Legacy defaults domain `com.timur.speedtestmenubar` still exists; harmless, don't reuse the id.
+
+## 2026-11-05 — passive network activity and recovery
+
+The continuous probe was deliberately disabled by `com.timur.network-probe-guard` after saturating the connection; do not enable it merely to clear stale readings. The app now samples local `en*` interface counters without generating traffic and labels the values as network activity, not capacity. It provides Restart App, Restart Probe (reports failure if the disabled/unloaded service cannot be started), and Reset Peaks. Probe auto-kickstarts were removed. An intentional continuous-probe opt-in and its bandwidth impact are documented in `../00_Network_Topology/NETWORK_SPEED_2026-11-05.md`.
+
+Deployed to `~/Applications/SpeedtestMenuBar.app`, with the previous bundle preserved as `~/Applications/SpeedtestMenuBar.before-passive-20261105.app`. Release build and code signature passed; accessibility inspection showed changing values; menu Restart App produced a new launchd PID; Reset Peaks and the failed-probe alert were exercised. The probe remains disabled. Remote `origin/main` and local main have unrelated histories; do not force-push or merge them without reviewing the separate public project history.

@@ -1,72 +1,80 @@
 import Cocoa
+import Darwin
 
-/// Monitors the speedtest-live-probe health — reads latest.json, detects staleness,
-/// and can restart the probe via launchctl.
+/// Passive counters from active physical Ethernet/Wi-Fi interfaces. No test traffic is generated.
 final class ProbeMonitor {
-    let cacheURL: URL
-    let probeBinURL: URL
-    private(set) var state = SpeedtestState()
     private(set) var downloadHistory = SpeedHistory()
     private(set) var uploadHistory = SpeedHistory()
-
-    /// These hold the last known good values so the display doesn't flicker to "--" on stale reads.
-    private var lastGoodDownload: Double?
-    private var lastGoodUpload: Double?
-    private var lastGoodPeakDownload: Double?
-    private var lastGoodPeakUpload: Double?
-
-    private let home = FileManager.default.homeDirectoryForCurrentUser
-
-    init() {
-        cacheURL = home.appendingPathComponent("Library/Caches/speedtest-menubar/latest.json")
-        probeBinURL = home.appendingPathComponent(".local/bin/speedtest-live-probe")
-    }
+    private(set) var currentDownload: Double?
+    private(set) var currentUpload: Double?
+    private(set) var peakDownload: Double?
+    private(set) var peakUpload: Double?
+    private(set) var interfaces: [String] = []
+    private var previous: [String: (UInt32, UInt32)] = [:]
+    private var lastSample: TimeInterval = 0
 
     func tick() {
-        state.reload(from: cacheURL)
-        rememberGood()
-        downloadHistory.append(state.downloadMbps ?? lastGoodDownload)
-        uploadHistory.append(state.uploadMbps ?? lastGoodUpload)
-    }
-
-    private func rememberGood() {
-        if let v = state.downloadMbps, v > 0 { lastGoodDownload = v }
-        if let v = state.uploadMbps, v > 0 { lastGoodUpload = v }
-        if let v = state.sessionDownloadPeak ?? state.downloadPeak, v > 0 { lastGoodPeakDownload = v }
-        if let v = state.sessionUploadPeak ?? state.uploadPeak, v > 0 { lastGoodPeakUpload = v }
-    }
-
-    var currentDownload: Double? { state.downloadMbps ?? lastGoodDownload }
-    var currentUpload: Double? { state.uploadMbps ?? lastGoodUpload }
-    var peakDownload: Double? { state.sessionDownloadPeak ?? state.downloadPeak ?? lastGoodPeakDownload ?? currentDownload }
-    var peakUpload: Double? { state.sessionUploadPeak ?? state.uploadPeak ?? lastGoodPeakUpload ?? currentUpload }
-
-    func kickstart() {
-        let uid = String(getuid())
-        runCommand("/bin/launchctl", ["kickstart", "-k", "gui/\(uid)/com.timur.speedtestliveprobe"])
-    }
-
-    func runProbe(_ args: [String]) {
-        DispatchQueue.global(qos: .utility).async { [self] in
-            let proc = Process()
-            proc.executableURL = probeBinURL
-            proc.arguments = args
-            proc.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
-            proc.standardError = FileHandle(forWritingAtPath: "/dev/null")
-            try? proc.run()
-            proc.waitUntilExit()
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastSample >= 1 else { return }
+        var address: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&address) == 0, let first = address else {
+            currentDownload = nil; currentUpload = nil; previous = [:]; lastSample = now
+            return
         }
+        defer { freeifaddrs(first) }
+        var counters: [String: (UInt32, UInt32)] = [:]
+        var cursor: UnsafeMutablePointer<ifaddrs>? = first
+        while let entry = cursor {
+            let info = entry.pointee
+            let name = String(cString: info.ifa_name)
+            if name.hasPrefix("en"), let addr = info.ifa_addr, addr.pointee.sa_family == UInt8(AF_LINK),
+               (info.ifa_flags & UInt32(IFF_UP | IFF_RUNNING)) == UInt32(IFF_UP | IFF_RUNNING),
+               let data = info.ifa_data?.assumingMemoryBound(to: if_data.self) {
+                counters[name] = (data.pointee.ifi_ibytes, data.pointee.ifi_obytes)
+            }
+            cursor = info.ifa_next
+        }
+        interfaces = counters.keys.sorted()
+        let elapsed = now - lastSample
+        var down: UInt64 = 0, up: UInt64 = 0
+        var matched = false
+        for (name, value) in counters {
+            if let old = previous[name] {
+                down += UInt64(value.0 &- old.0)
+                up += UInt64(value.1 &- old.1)
+                matched = true
+            }
+        }
+        if matched && elapsed > 0 && elapsed < 10 {
+            currentDownload = Double(down) * 8 / elapsed / 1_000_000
+            currentUpload = Double(up) * 8 / elapsed / 1_000_000
+            peakDownload = max(peakDownload ?? 0, currentDownload ?? 0)
+            peakUpload = max(peakUpload ?? 0, currentUpload ?? 0)
+            downloadHistory.append(currentDownload); uploadHistory.append(currentUpload)
+        } else { currentDownload = nil; currentUpload = nil }
+        previous = counters; lastSample = now
     }
 
-    private func runCommand(_ path: String, _ args: [String]) {
+    func resetPeaks() { peakDownload = currentDownload; peakUpload = currentUpload }
+
+    func restartProbe(completion: @escaping (String?) -> Void) {
         DispatchQueue.global(qos: .utility).async {
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: path)
-            proc.arguments = args
-            proc.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
-            proc.standardError = FileHandle(forWritingAtPath: "/dev/null")
-            try? proc.run()
-            proc.waitUntilExit()
+            let process = Process()
+            let pipe = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            process.arguments = ["kickstart", "-k", "gui/\(getuid())/com.timur.speedtestliveprobe"]
+            process.standardError = pipe
+            do {
+                try process.run()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                let message = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                DispatchQueue.main.async {
+                    completion(process.terminationStatus == 0 ? nil : "The continuous probe is disabled or not loaded. It was stopped because it saturated the connection.\n\n\(message)")
+                }
+            } catch {
+                DispatchQueue.main.async { completion(error.localizedDescription) }
+            }
         }
     }
 }

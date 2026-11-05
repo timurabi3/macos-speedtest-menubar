@@ -1,8 +1,8 @@
 {
-  "task": "Passive network activity and app recovery",
-  "goal": "Show live activity without continuous speedtest traffic and provide usable recovery controls.",
+  "task": "Restore continuous live speed tests",
+  "goal": "Show continuous measured download and upload speeds, including while idle",
   "status": "done",
-  "handoffNote": "2026-11-05: passive en* interface counters; Restart App, Reset Peaks, and explicit probe restart failure. Continuous probe remains disabled by network guard. Local main and origin/main have unrelated histories; do not force-push.",
+  "handoffNote": "User explicitly opted in to continuous bandwidth-consuming speed tests. Guard marker exists; probe enabled and running. Restart Probe, Restart App, and Reset Peaks verified. Earlier passive-only handoff superseded.",
   "done": [
     "Patched /Users/timur_Abi/.local/share/speedtest-menubar/SpeedtestMenuBar.swift to use sharp attributed menubar text like D53.6 U34.6 instead of an image-only status item that was visually blank.",
     "Rebuilt /Users/timur_Abi/Applications/SpeedtestMenuBar.app/Contents/MacOS/SpeedtestMenuBar with swiftc -O -framework Cocoa and ad-hoc signed the app.",
@@ -36,6 +36,6 @@
   ],
   "files": [],
   "lastAgent": "codex",
-  "updatedAt": "2026-11-05T00:56:12.800070+00:00",
+  "updatedAt": "2026-11-05T00:59:46.496951+00:00",
   "passCount": 2
 }

@@ -49,6 +49,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     func start() {
         registerStatusItem(force: true)
+        probe.kickstart()
         probe.tick()
         startTimers()
         subscribeToSystemNotifications()
@@ -201,6 +202,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             self?.retryEnsureVisible(delays: [1.0, 2.5, 5.0])
+            self?.probe.kickstart()
             DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
                 self?.startTimers()
             }
@@ -269,6 +271,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         probe.tick()
         render()
 
+        if probe.state.isStale {
+            let age = Date().timeIntervalSince1970 - probe.state.updatedAt
+            if age > 10 {
+                probe.kickstart()
+            }
+        }
+
         if !itemLooksAlive {
             ensureVisible()
         }
@@ -316,11 +325,26 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             attributes: [.font: valueFont, .foregroundColor: Colors.up]
         ))
 
+        if probe.state.isStale {
+            result.append(NSAttributedString(
+                string: " !",
+                attributes: [.font: spacerFont, .foregroundColor: Colors.warning]
+            ))
+        }
+
         return result
     }
 
     private func buildTooltip() -> String {
-        "Live network activity (Mbps)\nDown: \(Format.mbps(probe.currentDownload))  Up: \(Format.mbps(probe.currentUpload))\nInterfaces: \(probe.interfaces.joined(separator: ", "))"
+        [
+            "Live Speedtest",
+            "Max down: \(Format.mbps(probe.peakDownload)) Mbps",
+            "Max up: \(Format.mbps(probe.peakUpload)) Mbps",
+            "Live down: \(Format.mbps(probe.currentDownload)) Mbps",
+            "Live up: \(Format.mbps(probe.currentUpload)) Mbps",
+            "Status: \(probe.state.isStale ? "stale" : probe.state.status)",
+            "Updated: \(probe.state.ageText)"
+        ].joined(separator: "\n")
     }
 
     // MARK: - NSMenuDelegate
@@ -346,16 +370,21 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             menu.addItem(item)
         }
 
-        disabled("Live Network Activity")
-        disabled("Down: \(Format.mbps(probe.currentDownload)) Mbps")
-        disabled("Up: \(Format.mbps(probe.currentUpload)) Mbps")
-        disabled("Peak down: \(Format.mbps(probe.peakDownload)) Mbps")
-        disabled("Peak up: \(Format.mbps(probe.peakUpload)) Mbps")
-        disabled("Interfaces: \(probe.interfaces.isEmpty ? "unavailable" : probe.interfaces.joined(separator: ", "))")
-        disabled("Passive traffic, not a capacity test")
+        disabled("Live Speedtest v3")
+        disabled("Live down: \(Format.mbps(probe.currentDownload)) Mbps")
+        disabled("Live up: \(Format.mbps(probe.currentUpload)) Mbps")
+        disabled("Max down: \(Format.mbps(probe.peakDownload)) Mbps")
+        disabled("Max up: \(Format.mbps(probe.peakUpload)) Mbps")
+        disabled("Status: \(probe.state.isStale ? "stale" : probe.state.status)")
+        disabled("Updated: \(probe.state.ageText)")
+
+        if let error = probe.state.error {
+            disabled("Error: \(error)")
+        }
+
         menu.addItem(NSMenuItem.separator())
-        action("Restart App", #selector(restartApp))
         action("Restart Probe", #selector(kickstartProbe))
+        action("Restart App", #selector(restartApp))
         action("Reset Peaks", #selector(resetPeaks))
         action("Quit", #selector(quitApp))
     }
@@ -370,15 +399,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             }
         }
     }
-    @objc private func resetPeaks() { probe.resetPeaks() }
     @objc private func restartApp() {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         process.arguments = ["kickstart", "-k", "gui/\(getuid())/com.timur.speedtestmenubar"]
-        do { try process.run() } catch {
-            let alert = NSAlert(error: error)
-            alert.runModal()
-        }
+        do { try process.run() } catch { NSAlert(error: error).runModal() }
     }
+    @objc private func resetPeaks() { probe.runProbe(["reset"]) }
     @objc private func quitApp() { NSApp.terminate(nil) }
 }

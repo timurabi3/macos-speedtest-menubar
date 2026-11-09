@@ -2,7 +2,7 @@
   "task": "SpeedBar universal Dock app and GitHub release",
   "goal": "Distribute a universal Mac app with Dock and Spotlight access via a styled DMG.",
   "status": "done",
-  "handoffNote": "SpeedBar 6.0.0 published as universal drag-install DMG; public main/tag 843a762; installed app, Dock relaunch, Spotlight index, real measurements and probe lifecycle verified.",
+  "handoffNote": "Redesigned public SpeedBar README and release notes with a large DMG button, three installation images, the retained menu-bar clip, and genuine dashboard footage. Website-ready media is on public main c2a4ef4.",
   "done": [
     "Patched /Users/timur_Abi/.local/share/speedtest-menubar/SpeedtestMenuBar.swift to use sharp attributed menubar text like D53.6 U34.6 instead of an image-only status item that was visually blank.",
     "Rebuilt /Users/timur_Abi/Applications/SpeedtestMenuBar.app/Contents/MacOS/SpeedtestMenuBar with swiftc -O -framework Cocoa and ad-hoc signed the app.",
@@ -18,7 +18,8 @@
     "Verified Swift typecheck passes, Go liveprobe tests pass, app signature is valid, LaunchAgent plists lint OK, speedtest-live-probe LaunchAgent is running, and SpeedtestMenuBar app process is running.",
     "Verified live tick samples: updated_at stayed under about 1.1s old, live D/U changed, sparkline title changed, max numbers persisted.",
     "Captured visual proof: /tmp/speedtest-graph-final2-crop.png, /tmp/speedtest-graph-final2-full.png, /tmp/speedtest-graph-final-recording.mov, /tmp/speedtest-graph-final-recording-end.png.",
-    "SpeedBar 6.0.0 published as universal drag-install DMG; public main/tag 843a762; installed app, Dock relaunch, Spotlight index, real measurements and probe lifecycle verified."
+    "SpeedBar 6.0.0 published as universal drag-install DMG; public main/tag 843a762; installed app, Dock relaunch, Spotlight index, real measurements and probe lifecycle verified.",
+    "Redesigned public SpeedBar README and release notes with a large DMG button, three installation images, the retained menu-bar clip, and genuine dashboard footage. Website-ready media is on public main c2a4ef4."
   ],
   "next": [],
   "openQuestions": [],
@@ -37,6 +38,6 @@
     "https://github.com/timurabi3/macos-speedtest-menubar/releases/tag/v6.0.0"
   ],
   "lastAgent": "codex",
-  "updatedAt": "2026-11-09T20:06:28.389060+00:00",
-  "passCount": 3
+  "updatedAt": "2026-11-09T20:16:21.848896+00:00",
+  "passCount": 4
 }

@@ -7,6 +7,12 @@
 - The two legacy `com.timur.speedtestmenubar` and `com.timur.speedtestliveprobe` jobs were disabled and unloaded to prevent duplicate test traffic. Their plists and old app were retained for rollback. To revert, quit SpeedBar and re-enable/bootstrap the old jobs from `~/Library/LaunchAgents`. The old network guard watches the legacy probe label; use SpeedBar's Pause button to stop the new probe.
 - No SpeedBar website or GitHub Pages site was found. GitHub README links directly to the installer.
 
+## GitHub launch page and reusable media
+
+Public `main` commit `c2a4ef4` adds a prominent installer button, a new hero, and three illustrated installation steps to the README. The existing v6.0.0 GitHub release notes also show the download button and guide. The release tag and DMG are unchanged. The original menu bar GIF/MP4 are retained.
+
+The new footage uses live network measurements from a temporary capture build of the SpeedBar 6.0.0 dashboard. It records only the app window. Reuse `media/dashboard-live.mp4` (9 s, H.264, no audio), `media/dashboard-poster.png`, and `media/dashboard-live.gif` from public `main` for the future website. No SpeedBar site was found. Once Timur buys the domain, use `~/.agents/skills/connect-domain-to-pi/SKILL.md` for Pi hosting and connection.
+
 Historical handoffs follow.
 
 # 🏃 HANDOFF — Speedtest menu bar widget: root-caused the "disappears forever" bug, shipped v3 as a real app

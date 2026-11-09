@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="255" viewBox="0 0 1040 255" role="img" aria-labelledby="title">
+  <title id="title">SpeedBar for macOS</title>
+  <defs>
+    <linearGradient id="panel" x2="1" y2="1">
+      <stop stop-color="#0a1421"/><stop offset="1" stop-color="#163b49"/>
+    </linearGradient>
+    <pattern id="grid" width="34" height="34" patternUnits="userSpaceOnUse">
+      <path d="M 34 0 H 0 V 34" fill="none" stroke="#8bf7da" stroke-opacity=".09"/>
+    </pattern>
+    <linearGradient id="area" x2="0" y2="1">
+      <stop stop-color="#4df5bc" stop-opacity=".24"/><stop offset="1" stop-color="#4df5bc" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="edge"><rect x="0" y="0" width="1040" height="255" rx="22"/></clipPath>
+  </defs>
+  <g clip-path="url(#edge)">
+    <rect width="1040" height="255" fill="url(#panel)"/>
+    <rect width="1040" height="255" fill="url(#grid)"/>
+    <path d="M 544 201 L 590 184 621 192 658 143 689 151 725 115 758 129 792 90 822 103 853 70 883 87 915 41 947 54 980 27 1012 41 1040 16 V 255 H 544 Z" fill="url(#area)"/>
+    <path d="M 544 201 L 590 184 621 192 658 143 689 151 725 115 758 129 792 90 822 103 853 70 883 87 915 41 947 54 980 27 1012 41 1040 16" fill="none" stroke="#58f4c3" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M 544 220 L 591 225 627 207 659 213 694 185 724 194 758 177 795 184 824 155 856 165 889 148 917 152 952 130 979 139 1012 123 1040 130" fill="none" stroke="#ff7382" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="77" cy="69" r="22" fill="#143c44" stroke="#58f4c3" stroke-width="1.5"/>
+    <path d="M 65 75 A 13 13 0 1 1 89 75 M 77 74 L 85 64" fill="none" stroke="#82f8d1" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="77" cy="74" r="2" fill="#82f8d1"/>
+    <text x="113" y="74" font-family="system-ui, Helvetica, sans-serif" font-size="14" font-weight="650" letter-spacing="3" fill="#82f8d1">LIVE NETWORK SPEED FOR MAC</text>
+    <text x="51" y="162" font-family="system-ui, Helvetica, sans-serif" font-size="80" font-weight="750" letter-spacing="-5" fill="#f1fcff">SpeedBar</text>
+    <text x="56" y="206" font-family="system-ui, Helvetica, sans-serif" font-size="23" font-weight="450" fill="#c4dce6">Download and upload at a glance.</text>
+  </g>
+</svg>

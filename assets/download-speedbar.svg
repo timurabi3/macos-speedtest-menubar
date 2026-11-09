@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="330" height="64" viewBox="0 0 330 64" role="img" aria-labelledby="title">
+  <title id="title">Download SpeedBar for macOS</title>
+  <defs>
+    <linearGradient id="button">
+      <stop stop-color="#6cf7ce"/><stop offset="1" stop-color="#54e5af"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="328" height="62" rx="15" fill="url(#button)" stroke="#28bd96" stroke-width="2"/>
+  <path d="M 36 18 V 35 M 29 29 L 36 36 43 29 M 26 39 V 45 H 46 V 39" fill="none" stroke="#08352d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="60" y="39" fill="#092c24" font-family="system-ui, Helvetica, sans-serif" font-size="21" font-weight="700">Download for macOS</text>
+  <path d="M 294 32 H 306 M 301 27 L 306 32 301 37" fill="none" stroke="#08352d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

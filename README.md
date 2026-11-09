@@ -1,24 +1,61 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="SpeedBar — live network speed in the macOS menu bar" width="100%">
+  <img src="assets/speedbar-hero.svg" alt="SpeedBar for macOS. Live download and upload speeds at a glance." width="1000">
 </p>
 
-# SpeedBar
+<p align="center">
+  <a href="https://github.com/timurabi3/macos-speedtest-menubar/releases/latest/download/SpeedBar.dmg"><img src="assets/download-speedbar.svg" alt="Download SpeedBar for macOS (.dmg)" width="330" height="64"></a>
+</p>
 
-Live download and upload speeds in your Mac’s menu bar, with sparklines and session peaks. Open the dashboard from the Dock, Spotlight, or **Open SpeedBar** in the menu bar.
+<p align="center">
+  macOS 14 or later · Apple Silicon and Intel · <a href="https://github.com/timurabi3/macos-speedtest-menubar/releases/latest">Release notes and checksum</a>
+</p>
+<h1 align="center">Your internet speed, right in the menu bar</h1>
 
-**[Download SpeedBar for macOS](https://github.com/timurabi3/macos-speedtest-menubar/releases/latest/download/SpeedBar.dmg)** · [Release notes and checksum](https://github.com/timurabi3/macos-speedtest-menubar/releases/latest)
+<p align="center">
+  Watch download and upload speeds change in real time. Open the dashboard from the Dock or Spotlight to see your current speeds and session peaks.
+</p>
 
-One universal app for Apple Silicon and Intel Macs running macOS 14 or later.
 
-## Install
+## See SpeedBar in action
 
-1. Open `SpeedBar.dmg` and drag **SpeedBar** onto **Applications**.
-2. Eject the disk image. Press **⌘ Space**, type **SpeedBar**, and press Return.
-3. Click **Start Continuous Test** to begin. To pin the app, Control-click its Dock icon and choose **Options → Keep in Dock**.
+<img src="media/dashboard-live.gif" alt="Live recording of the SpeedBar dashboard. Download and upload rates and session peaks update during a real test." width="740">
 
-The current download is ad-hoc signed and has no Apple notarization. macOS may block the first launch. After trying to open SpeedBar, go to **System Settings → Privacy & Security → Open Anyway** if offered. See [Apple’s instructions](https://support.apple.com/en-us/102445).
+SpeedBar keeps testing when you close the dashboard. Green shows download speed and red shows upload speed.
 
-If upgrading from a release that installed background agents, stop them once so you don't run two probes:
+<img src="media/demo.gif" alt="Original live clip of green download and red upload sparklines updating in the macOS menu bar" width="234">
+
+[Watch the dashboard recording as MP4](media/dashboard-live.mp4)
+
+## Install SpeedBar
+
+### 1. Download and open the disk image
+
+Click the download button above, then double-click **SpeedBar.dmg** in Downloads.
+
+<img src="media/install/01-open-download.svg" alt="Illustration of SpeedBar.dmg in Downloads with a double-click instruction" width="760">
+
+### 2. Drag SpeedBar into Applications
+
+In the window that opens, drag the **SpeedBar** icon onto **Applications**. Eject the disk image once the copy finishes.
+
+<img src="media/install/02-drag-to-applications.png" alt="Illustrated SpeedBar installer window showing the app icon on the left and Applications on the right, with an arrow between them" width="760">
+
+### 3. Open SpeedBar and start measuring
+
+Press **⌘ Space**, search for **SpeedBar**, and press **Return**. In the dashboard, click **Start Continuous Test**. To pin it, Control-click its Dock icon and choose **Options → Keep in Dock**.
+
+<img src="media/install/03-start-speedbar.png" alt="The SpeedBar dashboard before the first test, with the blue Start Continuous Test button visible" width="620">
+
+If macOS blocks the first launch, open **System Settings → Privacy & Security** and choose **Open Anyway** after attempting to open SpeedBar. This release is ad-hoc signed and has no Apple notarization. [Apple’s first-launch instructions](https://support.apple.com/en-us/102445)
+
+## How continuous testing works
+
+SpeedBar generates test traffic while measurement is on, so the readings keep changing even when you aren't browsing. This uses bandwidth on your connection. Choose **Pause Test** to stop traffic or **Quit SpeedBar** to close the app and its probe. You can reopen the dashboard from the menu bar or Dock.
+
+<details>
+<summary>Upgrading from a version that installed background agents</summary>
+
+Stop the older agents once so you only have one speed test running.
 
 ```bash
 for label in com.timur.speedtestmenubar com.timur.speedtestliveprobe; do
@@ -27,15 +64,10 @@ for label in com.timur.speedtestmenubar com.timur.speedtestliveprobe; do
 done
 ```
 
-## Use SpeedBar
+</details>
 
-<img src="media/demo.gif" alt="Green download and red upload figures and sparklines updating in the menu bar" width="234">
-
-Green is download; red is upload. SpeedBar generates test traffic continuously while enabled and updates the display about five times per second. Continuous testing uses bandwidth even when you're not browsing, and can compete with other activity on the same connection.
-
-The dashboard shows current rates and session peaks in Mbps. Close the window to leave the menu bar running, click the Dock icon to reopen it, or choose **Pause Test** to stop traffic. **Quit SpeedBar** stops the app and its bundled probe. The app remembers your measurement choice for the next launch. No separate helper installation is required.
-
-## Build from source
+<details>
+<summary>Build from source</summary>
 
 Use macOS 14+, the Xcode command-line tools with Swift 5.9+, and Go 1.22+.
 
@@ -46,8 +78,10 @@ SpeedtestMenuBarApp/Scripts/package_app.sh
 
 The resulting universal app is at `SpeedtestMenuBarApp/build/SpeedBar.app`. To build and install to `~/Applications` in one step, run `./install.sh`.
 
-For the styled disk image, also install [uv](https://docs.astral.sh/uv/), then run `SpeedtestMenuBarApp/Scripts/package_dmg.sh`. It writes `SpeedBar.dmg` and `SpeedBar.dmg.sha256` to the same build directory. For a notarized build, provide a Developer ID Application identity via `SPEEDBAR_SIGN_IDENTITY` and an existing `notarytool` keychain profile via `SPEEDBAR_NOTARY_PROFILE`.
+For the styled disk image, install [uv](https://docs.astral.sh/uv/) and run `SpeedtestMenuBarApp/Scripts/package_dmg.sh`. It writes `SpeedBar.dmg` and `SpeedBar.dmg.sha256` to the same build directory. For a notarized build, provide a Developer ID Application identity via `SPEEDBAR_SIGN_IDENTITY` and an existing `notarytool` keychain profile via `SPEEDBAR_NOTARY_PROFILE`.
 
-The app launches the bundled Go probe as a child process and reads a private, per-session JSON file. The probe uses a rolling 500 ms window and updates that file every 200 ms. The probe stops when its input pipe closes, including when the app is force quit. The default endpoints are CacheFly for download and Cloudflare for upload; the process environment can override them with `SPEEDTEST_LIVE_DOWNLOAD_URL` and `SPEEDTEST_LIVE_UPLOAD_URL`.
+The app launches the bundled Go probe as a child process and reads a private, per-session JSON file. The probe uses a rolling 500 ms window and updates that file every 200 ms. The probe stops when its input pipe closes, including when the app is force quit. The default endpoints are CacheFly for download and Cloudflare for upload. The process environment can override them with `SPEEDTEST_LIVE_DOWNLOAD_URL` and `SPEEDTEST_LIVE_UPLOAD_URL`.
+
+</details>
 
 All rights reserved.

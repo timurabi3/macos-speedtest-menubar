@@ -1,8 +1,8 @@
 {
-  "task": "Restore continuous live speed tests",
-  "goal": "Show continuous measured download and upload speeds, including while idle",
+  "task": "SpeedBar universal Dock app and GitHub release",
+  "goal": "Distribute a universal Mac app with Dock and Spotlight access via a styled DMG.",
   "status": "done",
-  "handoffNote": "Bandwidth investigation: on/off/on en0 evidence confirms probe consumes hundreds of Mbps. No validated mechanism satisfies identical fresh throughput measurements with negligible bandwidth. Continuous probe restored, UI/code unchanged. See docs/investigations/2026-11-05-continuous-probe-bandwidth.md. Requested efficiency outcome unresolved.",
+  "handoffNote": "SpeedBar 6.0.0 published as universal drag-install DMG; public main/tag 843a762; installed app, Dock relaunch, Spotlight index, real measurements and probe lifecycle verified.",
   "done": [
     "Patched /Users/timur_Abi/.local/share/speedtest-menubar/SpeedtestMenuBar.swift to use sharp attributed menubar text like D53.6 U34.6 instead of an image-only status item that was visually blank.",
     "Rebuilt /Users/timur_Abi/Applications/SpeedtestMenuBar.app/Contents/MacOS/SpeedtestMenuBar with swiftc -O -framework Cocoa and ad-hoc signed the app.",
@@ -17,12 +17,10 @@
     "Rebuilt /Users/timur_Abi/Applications/SpeedtestMenuBar.app/Contents/MacOS/SpeedtestMenuBar with swiftc -O -framework Cocoa and ad-hoc signed it.",
     "Verified Swift typecheck passes, Go liveprobe tests pass, app signature is valid, LaunchAgent plists lint OK, speedtest-live-probe LaunchAgent is running, and SpeedtestMenuBar app process is running.",
     "Verified live tick samples: updated_at stayed under about 1.1s old, live D/U changed, sparkline title changed, max numbers persisted.",
-    "Captured visual proof: /tmp/speedtest-graph-final2-crop.png, /tmp/speedtest-graph-final2-full.png, /tmp/speedtest-graph-final-recording.mov, /tmp/speedtest-graph-final-recording-end.png."
+    "Captured visual proof: /tmp/speedtest-graph-final2-crop.png, /tmp/speedtest-graph-final2-full.png, /tmp/speedtest-graph-final-recording.mov, /tmp/speedtest-graph-final-recording-end.png.",
+    "SpeedBar 6.0.0 published as universal drag-install DMG; public main/tag 843a762; installed app, Dock relaunch, Spotlight index, real measurements and probe lifecycle verified."
   ],
-  "next": [
-    "If the user dislikes Unicode block style, next best stable variant is a shorter pure text arrow/bar version; avoid image+title hybrid unless willing to fight macOS menu-bar ordering again.",
-    "If the item shifts later, set defaults write com.timur.speedtestmenubar 'NSStatusItem Preferred Position SpeedtestMenuBarStatusItem' -int 974 and relaunch SpeedtestMenuBar."
-  ],
+  "next": [],
   "openQuestions": [],
   "watchOut": [
     "Do not use the old /Users/timur_Abi/All Codex Ai Projects/32_macOS_Speedtest_Menu_Bar path; current project folder is /Users/timur_Abi/All Codex Ai Projects/4_macOS_Speedtest_Menu_Bar.",
@@ -34,8 +32,11 @@
     "Do not reintroduce D/U letters unless the user explicitly asks; current request was to replace them with something more creative.",
     "LaunchAgent com.timur.speedtestmenubar reports not running because it uses /usr/bin/open; actual SpeedtestMenuBar process is the runtime proof."
   ],
-  "files": [],
+  "files": [
+    "HANDOFF.md",
+    "https://github.com/timurabi3/macos-speedtest-menubar/releases/tag/v6.0.0"
+  ],
   "lastAgent": "codex",
-  "updatedAt": "2026-11-05T01:08:26.239269+00:00",
-  "passCount": 2
+  "updatedAt": "2026-11-09T20:06:28.389060+00:00",
+  "passCount": 3
 }

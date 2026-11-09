@@ -1,3 +1,14 @@
+# SpeedBar 6.0.0 — universal Mac release (2026-11-09)
+
+- Published [v6.0.0](https://github.com/timurabi3/macos-speedtest-menubar/releases/tag/v6.0.0) with `SpeedBar.dmg` and its SHA-256 checksum. Public `main` and the tag both point to `843a762ee17d84d32f80a80d1d53df25b346e5bb`. The public release checkout and hub documentation history are intentionally separate.
+- One macOS 14+ app bundle, with arm64 and x86_64 slices for the AppKit/SwiftUI app and the Go probe. Finder opens the styled DMG in icon view with an Applications link. The mounted and installed copies passed strict signature verification; the public download matches the locally verified DMG. The build is ad-hoc signed and is not Apple notarized.
+- Installed at `/Applications/SpeedBar.app`, bundle ID `com.timur.speedbar`. Verified Spotlight metadata search by name and bundle ID, and verified the pinned Dock icon launches the installed app after Quit. Intel app execution was verified with Rosetta; no physical Intel Mac was used.
+- Verified live upload/download, Pause and Quit terminating the probe, and launch restoring the existing continuous testing preference on Timur's Mac. New installs start paused until the user enables the test. The probe is now a child of the app, with private session state under the macOS temporary directory.
+- The two legacy `com.timur.speedtestmenubar` and `com.timur.speedtestliveprobe` jobs were disabled and unloaded to prevent duplicate test traffic. Their plists and old app were retained for rollback. To revert, quit SpeedBar and re-enable/bootstrap the old jobs from `~/Library/LaunchAgents`. The old network guard watches the legacy probe label; use SpeedBar's Pause button to stop the new probe.
+- No SpeedBar website or GitHub Pages site was found. GitHub README links directly to the installer.
+
+Historical handoffs follow.
+
 # 🏃 HANDOFF — Speedtest menu bar widget: root-caused the "disappears forever" bug, shipped v3 as a real app
 
 > Any agent (Claude Code / OpenCode / Hermes / Antigravity) reads this to continue where the last one stopped.

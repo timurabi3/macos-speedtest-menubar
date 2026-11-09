@@ -1,34 +1,12 @@
 import Cocoa
-import CoreGraphics
 
 /// Owns the NSStatusItem lifecycle. Handles sleep/wake/display transitions that
 /// kill menu bar extras by detecting the dead item and re-registering it.
 ///
-/// KEY DESIGN 1: No autosaveName. SystemUIServer's autosaveName caching returns
-/// stale/dead item references after sleep/wake, making in-process re-registration
-/// silently fail. Without autosaveName, every registerStatusItem() call gets a
-/// genuinely fresh item from the system.
-///
-/// KEY DESIGN 2: A status item can die while `statusItem` and `button` are both
-/// still non-nil — the backing WindowServer window is destroyed (sleep/wake,
-/// display plug/unplug, WindowServer pressure) and the process never gets an
-/// error. The ONLY reliable liveness signals are the button window's
-/// windowNumber and the WindowServer's own window list, so both are checked.
-///
-/// KEY DESIGN 3: Watchdog exits use exit(1). The LaunchAgent keeps
-/// KeepAlive = {SuccessfulExit=false, Crashed=true}, so exit(1) → launchd
-/// restarts a fresh process, while a user Quit (exit 0) stays quit.
-/// (v2 used exit(0) here — launchd never restarted it: the "gone forever" bug.)
-///
-/// KEY DESIGN 4: Probe restarts are rate-limited inside ProbeMonitor, never here.
-/// `launchctl kickstart -k` KILLS the running probe first, so calling it from the
-/// 0.2s poll timer (as v3.0.0 did) SIGTERMed the probe ~5x/second — it could never
-/// live long enough to write a sample, the state stayed stale forever, and ~50
-/// throttle-blocked launchctl processes piled up. The staleness remedy caused the
-/// staleness. Any new restart trigger must go through ProbeMonitor.kickstart().
 final class StatusBarController: NSObject, NSMenuDelegate {
 
     private let probe: ProbeMonitor
+    private let openWindow: () -> Void
     private let pollInterval: TimeInterval = 0.2
     private let healthInterval: TimeInterval = 10.0
     private let minWidth: CGFloat = 76
@@ -43,12 +21,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var observers: [NSObjectProtocol] = []
     private var lastRegisterAt: TimeInterval = 0
 
-    /// Counts consecutive failed recoveries to trigger the launchd-restart exit.
-    private var failedRecreations = 0
-    private let maxFailedRecreations = 6
-
-    init(probe: ProbeMonitor) {
+    init(probe: ProbeMonitor, openWindow: @escaping () -> Void) {
         self.probe = probe
+        self.openWindow = openWindow
         super.init()
     }
 
@@ -56,7 +31,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     func start() {
         registerStatusItem(force: true)
-        probe.kickstart()
         probe.tick()
         startTimers()
         subscribeToSystemNotifications()
@@ -112,7 +86,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var occlusionStrikes = 0
     private let maxOcclusionStrikes = 3
 
-    // MARK: - Status Item (NO autosaveName — SystemUIServer caching is the enemy)
+    // MARK: - Status Item
 
     private func registerStatusItem(force: Bool = false) {
         let now = Date().timeIntervalSince1970
@@ -165,20 +139,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     /// wake/display notifications.
     func ensureVisible() {
         if itemLooksAlive {
-            failedRecreations = 0
             statusItem?.isVisible = true
             render()
             return
         }
 
-        failedRecreations += 1
-        if failedRecreations > maxFailedRecreations {
-            // Stuck beyond in-process repair — exit NON-zero so launchd
-            // (KeepAlive.Crashed=true) restarts a clean process.
-            fputs("SpeedtestMenuBar: ensureVisible failed \(failedRecreations)x, exit(1) for launchd restart\n", stderr)
-            exit(1)
-        }
-        fputs("SpeedtestMenuBar: status item dead (attempt \(failedRecreations)), re-registering\n", stderr)
         registerStatusItem()
     }
 
@@ -209,7 +174,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             self?.retryEnsureVisible(delays: [1.0, 2.5, 5.0])
-            self?.probe.kickstart()
             DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
                 self?.startTimers()
             }
@@ -278,14 +242,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         probe.tick()
         render()
 
-        // Reached at 5 Hz while stale; ProbeMonitor.kickstart() rate-limits it to one
-        // restart per 30s. Never call launchctl directly from here — `kickstart -k`
-        // SIGTERMs the probe, so an ungated call from this timer makes the staleness
-        // it reacts to permanent (see KEY DESIGN 4).
-        if probe.state.isStale, Date().timeIntervalSince1970 - probe.state.updatedAt > 10 {
-            probe.kickstart()
-        }
-
         if !itemLooksAlive {
             ensureVisible()
         }
@@ -296,6 +252,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private func render() {
         guard let button = statusItem?.button else { return }
 
+        if !probe.enabled {
+            statusItem?.length = NSStatusItem.squareLength
+            button.attributedTitle = NSAttributedString(string: "")
+            button.image = NSImage(systemSymbolName: "speedometer", accessibilityDescription: "SpeedBar paused")
+            button.imagePosition = .imageOnly
+            button.toolTip = "SpeedBar — paused"
+            return
+        }
         let title = buildTitle()
         let width = min(max(ceil(title.size().width) + 10, minWidth), maxWidth)
         statusItem?.length = width
@@ -333,7 +297,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             attributes: [.font: valueFont, .foregroundColor: Colors.up]
         ))
 
-        if probe.state.isStale {
+        if probe.stale {
             result.append(NSAttributedString(
                 string: " !",
                 attributes: [.font: spacerFont, .foregroundColor: Colors.warning]
@@ -350,8 +314,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             "Max up: \(Format.mbps(probe.peakUpload)) Mbps",
             "Live down: \(Format.mbps(probe.currentDownload)) Mbps",
             "Live up: \(Format.mbps(probe.currentUpload)) Mbps",
-            "Status: \(probe.state.isStale ? "stale" : probe.state.status)",
-            "Updated: \(probe.state.ageText)"
+            "Status: \(probe.status)",
+            "Updated: \(probe.state.updatedAt > 0 ? probe.state.ageText : "—")"
         ].joined(separator: "\n")
     }
 
@@ -378,33 +342,27 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             menu.addItem(item)
         }
 
-        disabled("Live Speedtest v3")
+        action("Open SpeedBar", #selector(showWindow))
+        menu.addItem(NSMenuItem.separator())
         disabled("Live down: \(Format.mbps(probe.currentDownload)) Mbps")
         disabled("Live up: \(Format.mbps(probe.currentUpload)) Mbps")
         disabled("Max down: \(Format.mbps(probe.peakDownload)) Mbps")
         disabled("Max up: \(Format.mbps(probe.peakUpload)) Mbps")
-        disabled("Status: \(probe.state.isStale ? "stale" : probe.state.status)")
-        disabled("Updated: \(probe.state.ageText)")
+        disabled("Status: \(probe.status)")
+        if probe.state.updatedAt > 0 { disabled("Updated: \(probe.state.ageText)") }
 
         if let error = probe.state.error {
             disabled("Error: \(error)")
         }
 
         menu.addItem(NSMenuItem.separator())
-        action("Kickstart Probe", #selector(kickstartProbe))
-        action("Reset Peaks", #selector(resetPeaks))
-        action("Reinstall Probe", #selector(reinstallProbe))
-        action("Quit", #selector(quitApp))
+        action(probe.enabled ? "Pause Test" : "Start Continuous Test", #selector(toggleTest))
+        if probe.enabled { action("Reset Peaks", #selector(resetPeaks)) }
+        action("Quit SpeedBar", #selector(quitApp))
     }
 
-    @objc private func kickstartProbe() { probe.kickstart(force: true) }
-
-    /// Force the .app's bundled probe over the installed one. Needed after
-    /// replacing the .app with a newer release, since the automatic installer
-    /// deliberately never overwrites an existing probe.
-    @objc private func reinstallProbe() {
-        DispatchQueue.global(qos: .userInitiated).async { ProbeInstaller.reinstall() }
-    }
-    @objc private func resetPeaks() { probe.runProbe(["reset"]) }
+    @objc private func showWindow() { openWindow() }
+    @objc private func toggleTest() { probe.toggle(); render() }
+    @objc private func resetPeaks() { probe.resetPeaks() }
     @objc private func quitApp() { NSApp.terminate(nil) }
 }

@@ -1,110 +1,131 @@
 import Cocoa
+import Combine
 
-/// Monitors the speedtest-live-probe health — reads latest.json, detects staleness,
-/// and can restart the probe via launchctl.
-final class ProbeMonitor {
-    let cacheURL: URL
-    let probeBinURL: URL
+/// Runs the bundled probe only while the app is open and measurement is enabled.
+final class ProbeMonitor: ObservableObject {
+    static let enabledKey = "ContinuousMeasurement"
+    @Published private(set) var enabled = UserDefaults.standard.bool(forKey: enabledKey)
+    @Published private(set) var status = "Paused"
+
     private(set) var state = SpeedtestState()
     private(set) var downloadHistory = SpeedHistory()
     private(set) var uploadHistory = SpeedHistory()
+    private var child: Process?
+    private var lifetimePipe: Pipe?
+    private var sessionURL: URL?
+    private var nextAttempt = Date.distantPast
+    private var stopping = false
+    private var launchTime = Date.distantPast
 
-    /// These hold the last known good values so the display doesn't flicker to "--" on stale reads.
-    private var lastGoodDownload: Double?
-    private var lastGoodUpload: Double?
-    private var lastGoodPeakDownload: Double?
-    private var lastGoodPeakUpload: Double?
+    var currentDownload: Double? { state.downloadMbps }
+    var currentUpload: Double? { state.uploadMbps }
+    var peakDownload: Double? { state.sessionDownloadPeak }
+    var peakUpload: Double? { state.sessionUploadPeak }
+    var stale: Bool { enabled && status != "Measuring" }
 
-    private let home = FileManager.default.homeDirectoryForCurrentUser
-
-    /// Serializes probe restarts.
-    ///
-    /// `launchctl kickstart -k` SIGTERMs the running probe before restarting it, and
-    /// launchd enforces a 10s minimum runtime, so a throttled kickstart blocks ~10s.
-    /// Calling this from the 0.2s poll timer killed the probe ~5x/second and piled up
-    /// ~50 blocked launchctl processes: the probe never lived long enough to write a
-    /// sample, so the staleness that triggered the restart became permanent and the
-    /// recovery path was itself the thing preventing recovery. (Diagnosed 2026-08-08:
-    /// probe dead since 2026-07-31, widget frozen on that day's numbers.)
-    /// One restart in flight at a time, at most one per `kickstartCooldown`.
-    private let kickstartQueue = DispatchQueue(label: "com.timur.speedtest3.kickstart")
-    private var kickstartInFlightSince: TimeInterval?
-    private var lastKickstartAt: TimeInterval = 0
-    private let kickstartCooldown: TimeInterval = 30.0
-    /// If launchctl ever wedges, don't disable recovery forever.
-    private let kickstartStuckTimeout: TimeInterval = 120.0
-
-    init() {
-        cacheURL = home.appendingPathComponent("Library/Caches/speedtest-menubar/latest.json")
-        probeBinURL = home.appendingPathComponent(".local/bin/speedtest-live-probe")
+    func toggle() {
+        enabled.toggle()
+        UserDefaults.standard.set(enabled, forKey: Self.enabledKey)
+        nextAttempt = .distantPast
+        if enabled { startIfNeeded() } else { stop() }
     }
 
     func tick() {
-        state.reload(from: cacheURL)
-        rememberGood()
-        downloadHistory.append(state.downloadMbps ?? lastGoodDownload)
-        uploadHistory.append(state.uploadMbps ?? lastGoodUpload)
-    }
-
-    private func rememberGood() {
-        if let v = state.downloadMbps, v > 0 { lastGoodDownload = v }
-        if let v = state.uploadMbps, v > 0 { lastGoodUpload = v }
-        if let v = state.sessionDownloadPeak ?? state.downloadPeak, v > 0 { lastGoodPeakDownload = v }
-        if let v = state.sessionUploadPeak ?? state.uploadPeak, v > 0 { lastGoodPeakUpload = v }
-    }
-
-    var currentDownload: Double? { state.downloadMbps ?? lastGoodDownload }
-    var currentUpload: Double? { state.uploadMbps ?? lastGoodUpload }
-    var peakDownload: Double? { state.sessionDownloadPeak ?? state.downloadPeak ?? lastGoodPeakDownload ?? currentDownload }
-    var peakUpload: Double? { state.sessionUploadPeak ?? state.uploadPeak ?? lastGoodPeakUpload ?? currentUpload }
-
-    /// Restart the probe LaunchAgent. Rate-limited — see `kickstartQueue`.
-    /// `force` (an explicit user action) skips the cooldown but still refuses to
-    /// stack on a restart that is already in flight.
-    /// Returns false when the request was suppressed.
-    @discardableResult
-    func kickstart(force: Bool = false) -> Bool {
-        let now = Date().timeIntervalSince1970
-        var proceed = false
-
-        kickstartQueue.sync {
-            if let since = kickstartInFlightSince, now - since < kickstartStuckTimeout { return }
-            if !force, now - lastKickstartAt < kickstartCooldown { return }
-            kickstartInFlightSince = now
-            lastKickstartAt = now
-            proceed = true
-        }
-
-        guard proceed else { return false }
-
-        let uid = String(getuid())
-        runCommand("/bin/launchctl", ["kickstart", "-k", "gui/\(uid)/com.timur.speedtestliveprobe"]) { [weak self] in
-            guard let self else { return }
-            self.kickstartQueue.sync { self.kickstartInFlightSince = nil }
-        }
-        return true
-    }
-
-    func runProbe(_ args: [String]) {
-        runCommand(probeBinURL.path, args)
-    }
-
-    /// `completion` always fires, including on launch failure — callers use it to
-    /// clear in-flight state, so swallowing it would wedge them permanently.
-    private func runCommand(_ path: String, _ args: [String], completion: (() -> Void)? = nil) {
-        DispatchQueue.global(qos: .utility).async {
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: path)
-            proc.arguments = args
-            proc.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
-            proc.standardError = FileHandle(forWritingAtPath: "/dev/null")
-            do {
-                try proc.run()
-                proc.waitUntilExit()
-            } catch {
-                fputs("SpeedtestMenuBar: \(path) failed to launch: \(error)\n", stderr)
+        guard enabled else { return }
+        if let sessionURL, !stopping {
+            objectWillChange.send()
+            state.reload(from: sessionURL.appendingPathComponent("latest.json"))
+            if state.status == "running", !state.isStale {
+                if status != "Measuring" { status = "Measuring" }
+                downloadHistory.append(currentDownload)
+                uploadHistory.append(currentUpload)
+            } else if Date().timeIntervalSince(launchTime) > 10,
+                      Date().timeIntervalSince1970 - state.updatedAt > 10 {
+                status = "Restarting probe…"
+                nextAttempt = Date().addingTimeInterval(2)
+                closeLifetimePipe()
             }
-            completion?()
+        }
+        startIfNeeded()
+    }
+
+    func stop() {
+        closeLifetimePipe()
+        status = "Paused"
+        resetReadings()
+    }
+
+    func resetPeaks() {
+        guard let sessionURL, !stopping, status == "Measuring" else { return }
+        do {
+            let command = ["command": "reset", "timestamp": Int64(Date().timeIntervalSince1970 * 1_000_000_000)] as [String: Any]
+            let data = try JSONSerialization.data(withJSONObject: command)
+            try data.write(to: sessionURL.appendingPathComponent("liveprobe-control.json"), options: .atomic)
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+    }
+
+    private func resetReadings() {
+        objectWillChange.send()
+        state = SpeedtestState()
+        downloadHistory = SpeedHistory()
+        uploadHistory = SpeedHistory()
+    }
+
+    private func closeLifetimePipe() {
+        stopping = child != nil
+        try? lifetimePipe?.fileHandleForWriting.close()
+        lifetimePipe = nil
+    }
+
+    private func startIfNeeded() {
+        guard enabled, child == nil, Date() >= nextAttempt else { return }
+        let process = Process()
+        let pipe = Pipe()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "SpeedBar-" + UUID().uuidString, isDirectory: true)
+        process.executableURL = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/speedtest-live-probe")
+        process.arguments = ["app-run"]
+        var environment = ProcessInfo.processInfo.environment
+        environment["SPEEDBAR_SESSION_DIR"] = directory.path
+        process.environment = environment
+        process.standardInput = pipe
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { [weak self] terminated in
+            try? FileManager.default.removeItem(at: directory)
+            DispatchQueue.main.async {
+                guard let self, self.child === terminated else { return }
+                let wasStopping = self.stopping
+                self.child = nil
+                self.lifetimePipe = nil
+                self.sessionURL = nil
+                self.stopping = false
+                if self.enabled {
+                    if !wasStopping {
+                        self.status = "Probe exited. Retrying…"
+                        self.nextAttempt = Date().addingTimeInterval(5)
+                    }
+                    self.startIfNeeded()
+                }
+            }
+        }
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
+                                                    attributes: [.posixPermissions: 0o700])
+            try process.run()
+            sessionURL = directory
+            lifetimePipe = pipe
+            child = process
+            launchTime = Date()
+            resetReadings()
+            status = "Starting probe…"
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            status = "Cannot start probe. Retrying…"
+            nextAttempt = Date().addingTimeInterval(10)
+            NSLog("SpeedBar: %@", error.localizedDescription)
         }
     }
 }

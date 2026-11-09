@@ -1,44 +1,42 @@
 #!/bin/bash
 set -euo pipefail
 
-# Build SpeedtestMenuBar.app from the SwiftPM package (no Xcode).
-# Output: <package>/build/SpeedtestMenuBar.app
-
 PKG_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-REPO_ROOT="$(cd "$PKG_DIR/.." && pwd)"
-PROBE_DIR="$REPO_ROOT/LiveProbe"
-PROBE_NAME="speedtest-live-probe"
-AGENT_LABEL="com.timur.speedtestliveprobe"
 source "$PKG_DIR/version.env"
+BUILD_DIR="$PKG_DIR/build"
+APP_DIR="$BUILD_DIR/$APP_NAME.app"
+PROBE_NAME=speedtest-live-probe
 
-APP_DIR="$PKG_DIR/build/$APP_NAME.app"
-BINARY_SRC="$PKG_DIR/.build/release/$APP_NAME"
+mkdir -p "$BUILD_DIR"
+STAGE="$(mktemp -d "$BUILD_DIR/.bundle.XXXXXX")"
+trap 'rm -rf "$STAGE"' EXIT
+APP="$STAGE/$APP_NAME.app"
+BIN="$APP/Contents/MacOS"
+RES="$APP/Contents/Resources"
+mkdir -p "$BIN" "$RES"
 
-echo "═══ Building $APP_NAME v$VERSION ($BUILD_NUMBER) ═══"
+for architecture in arm64 x86_64; do
+    scratch="$PKG_DIR/.build/$architecture"
+    swift_args=(--package-path "$PKG_DIR" --scratch-path "$scratch" --arch "$architecture" -c release)
+    swift build "${swift_args[@]}"
+    swift_bin="$(swift build "${swift_args[@]}" --show-bin-path)"
+    cp "$swift_bin/$EXECUTABLE" "$STAGE/app-$architecture"
+    go_arch="$architecture"
+    if [ "$architecture" = x86_64 ]; then go_arch=amd64; fi
+    GOOS=darwin GOARCH="$go_arch" CGO_ENABLED=0 go -C "$PKG_DIR/../LiveProbe" \
+        build -buildvcs=false -trimpath -o "$STAGE/probe-$architecture" .
+done
 
-swift build -c release --package-path "$PKG_DIR"
+lipo -create "$STAGE/app-arm64" "$STAGE/app-x86_64" -output "$BIN/$EXECUTABLE"
+lipo -create "$STAGE/probe-arm64" "$STAGE/probe-x86_64" -output "$BIN/$PROBE_NAME"
+chmod 755 "$BIN/"*
+cp "$PKG_DIR/Resources/AppIcon.icns" "$RES/AppIcon.icns"
 
-rm -rf "$APP_DIR"
-mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
-cp "$BINARY_SRC" "$APP_DIR/Contents/MacOS/$APP_NAME"
-
-# Embed the Go probe and its LaunchAgent template so a downloaded .app is
-# self-contained. Without the probe the app has nothing to display.
-# -buildvcs=false: this tree is often a git worktree, where VCS stamping fails.
-echo "→ Embedding $PROBE_NAME"
-go -C "$PROBE_DIR" build -buildvcs=false -trimpath -o "$APP_DIR/Contents/MacOS/$PROBE_NAME" .
-cp "$PROBE_DIR/LaunchAgents/$AGENT_LABEL.plist.template" \
-   "$APP_DIR/Contents/Resources/$AGENT_LABEL.plist.template"
-
-if [ -f "$PKG_DIR/Resources/AppIcon.icns" ]; then
-    cp "$PKG_DIR/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
-fi
-
-cat > "$APP_DIR/Contents/Info.plist" <<PLIST
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-    <key>CFBundleExecutable</key><string>$APP_NAME</string>
+    <key>CFBundleExecutable</key><string>$EXECUTABLE</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
     <key>CFBundleName</key><string>$APP_NAME</string>
@@ -48,17 +46,28 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
-    <key>LSUIElement</key><true/>
     <key>NSHumanReadableCopyright</key><string>All rights reserved.</string>
 </dict></plist>
 PLIST
 
-# Inside-out signing: nested executables must be signed before the bundle that
-# contains them, or the outer signature seals an unsigned binary and
-# --verify --deep fails.
-codesign --force --sign - --timestamp=none "$APP_DIR/Contents/MacOS/$PROBE_NAME"
-codesign --force --sign - --timestamp=none "$APP_DIR"
-codesign --verify --deep --strict --verbose=1 "$APP_DIR"
-touch "$APP_DIR"
+sign_args=(--force --sign "${SPEEDBAR_SIGN_IDENTITY:--}")
+if [ "${SPEEDBAR_SIGN_IDENTITY:--}" = - ]; then
+    sign_args+=(--timestamp=none)
+else
+    sign_args+=(--options runtime --timestamp)
+fi
+codesign "${sign_args[@]}" "$BIN/$PROBE_NAME"
+codesign "${sign_args[@]}" "$APP"
+codesign --verify --deep --strict "$APP"
+for binary in "$BIN/$EXECUTABLE" "$BIN/$PROBE_NAME"; do
+    archs="$(lipo -archs "$binary")"
+    case "$archs" in
+        "arm64 x86_64"|"x86_64 arm64") echo "$(basename "$binary"): $archs" ;;
+        *) echo "Expected a universal binary: $binary ($archs)" >&2; exit 1 ;;
+    esac
+done
+plutil -lint "$APP/Contents/Info.plist"
 
-echo "═══ Done: $APP_DIR ═══"
+rm -rf "$APP_DIR"
+mv "$APP" "$APP_DIR"
+echo "$APP_DIR"

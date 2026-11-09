@@ -144,7 +144,9 @@ func main() {
 	}
 	switch command {
 	case "run":
-		os.Exit(run())
+		os.Exit(run(false))
+	case "app-run":
+		os.Exit(run(true))
 	case "status":
 		os.Exit(printStatus())
 	case "reset":
@@ -159,12 +161,38 @@ func main() {
 	}
 }
 
-func run() int {
+// Set once before the managed probe starts its workers.
+var managedLogPath string
+
+func run(managed bool) int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	statePath := homePath(stateRelPath)
 	pidPath := homePath(pidRelPath)
 	controlPath := homePath(controlRelPath)
+	if managed {
+		// The app owns the write end of stdin. EOF also stops measurement if the
+		// app is force quit before its normal termination handler can run.
+		dir := os.Getenv("SPEEDBAR_SESSION_DIR")
+		if !filepath.IsAbs(dir) || !strings.HasPrefix(filepath.Base(dir), "SpeedBar-") {
+			fmt.Fprintln(os.Stderr, "app-run requires an absolute SpeedBar session directory")
+			return 2
+		}
+		statePath = filepath.Join(dir, "latest.json")
+		pidPath = filepath.Join(dir, "liveprobe.pid")
+		controlPath = filepath.Join(dir, "liveprobe-control.json")
+		managedLogPath = filepath.Join(dir, "liveprobe.log")
+		defer func() {
+			_ = os.Remove(statePath)
+			_ = os.Remove(controlPath)
+			_ = os.Remove(managedLogPath)
+			_ = os.Remove(dir)
+		}()
+		go func() {
+			_, _ = io.Copy(io.Discard, os.Stdin)
+			stop()
+		}()
+	}
 	if err := os.MkdirAll(filepath.Dir(statePath), 0755); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -213,6 +241,9 @@ func run() int {
 	for {
 		select {
 		case <-ctx.Done():
+			if managed {
+				return 0
+			}
 			_ = writeStateFile(statePath, State{
 				Mode: "live", Status: "stopped", Phase: "stopped", PID: nil,
 				DownloadMbps: floatPtr(lastDownMbps), UploadMbps: floatPtr(lastUpMbps),
@@ -849,9 +880,12 @@ func logProbeError(phase string, err error) {
 	if err == nil {
 		return
 	}
-	path := homePath(logRelPath)
-	if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
-		return
+	path := managedLogPath
+	if path == "" {
+		path = homePath(logRelPath)
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return
+		}
 	}
 	f, openErr := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if openErr != nil {
